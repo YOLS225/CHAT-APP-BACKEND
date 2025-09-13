@@ -1,0 +1,119 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String     @id @default(uuid())
+  userName  String     @unique
+  email     String     @unique
+  password  String
+  avatar    String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  isOnline  Boolean    @default(false)
+  lastSeen  DateTime   @default(now())
+  status    UserStatus @default(ACTIVE)
+
+  // Relations
+  sentMessages    Message[]    @relation("MessageSender")
+  roomMemberships RoomMember[]
+
+  @@map("users")
+}
+
+model Message {
+  id        String      @id @default(uuid())
+  content   String
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  type      MessageType @default(TEXT)
+
+  // Relations
+  senderId String
+  sender   User   @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  // Métadonnées
+  editedAt  DateTime?
+  isDeleted Boolean   @default(false)
+
+  @@index([roomId, createdAt])
+  @@index([senderId])
+  @@map("messages")
+}
+
+model Room {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  isPrivate   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Métadonnées
+  maxMembers Int     @default(100)
+  isActive   Boolean @default(true)
+
+  // Relations
+  messages Message[]
+  members  RoomMember[]
+
+  // Room privée (DM) entre 2 users
+  isDirectMessage Boolean @default(false)
+
+  @@index([isActive])
+  @@map("rooms")
+}
+
+model RoomMember {
+  id       String   @id @default(uuid())
+  joinedAt DateTime @default(now())
+  role     RoomRole @default(MEMBER)
+  isActive Boolean  @default(true)
+
+  // Relations
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roomId])
+  @@map("room_members")
+}
+
+// Enums
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  BANNED
+  SUSPENDED
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+  SYSTEM // Messages automatiques (join, leave, etc.)
+}
+
+enum RoomRole {
+  OWNER
+  ADMIN
+  MODERATOR
+  MEMBER
+}
