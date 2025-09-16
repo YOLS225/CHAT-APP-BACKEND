@@ -7,10 +7,12 @@ import {
   Param,
   Delete,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { UsersService } from '../../business-logic/users/users.service';
 import { CreateUserDto } from '../../business-logic/users/dto/create-user.dto';
 import { ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../../guard/jwt.guard';
 
 @Controller('users')
 export class UsersController {
@@ -23,7 +25,7 @@ export class UsersController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get all Users with pagination' })
+  @UseGuards(JwtAuthGuard)
   @ApiQuery({ name: 'search', required: false, type: String })
   findAll(
     @Query('page') page: string,
@@ -34,18 +36,21 @@ export class UsersController {
   }
 
   @Get(':id')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get an User' })
   findById(@Param('id') id: string) {
     return this.usersService.findById(id);
   }
 
   @Patch(':id')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Edit an User' })
   update(@Param('id') id: string, @Body() updateUserDto: CreateUserDto) {
     return this.usersService.updateUser(id, updateUserDto);
   }
 
   @Delete(':id')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Deactivate an User' })
   remove(@Param('id') id: string) {
     return this.usersService.deleteUser(id);
