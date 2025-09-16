@@ -8,6 +8,8 @@ import { MessagesModule } from './business-logic/messages/messages.module';
 import { RoomsModule } from './business-logic/rooms/rooms.module';
 import { RoomMembersModule } from './business-logic/room-members/room-members.module';
 import { AuthModule } from './business-logic/auth/auth.module';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigModule } from '@nestjs/config';
 
 @Module({
   imports: [
@@ -18,8 +20,9 @@ import { AuthModule } from './business-logic/auth/auth.module';
     RoomMembersModule,
     AuthModule,
     PrismaModule,
+    ConfigModule.forRoot({ isGlobal: true }),
   ],
   controllers: [AppController],
-  providers: [AppService, PrismaService],
+  providers: [AppService, PrismaService, JwtService],
 })
 export class AppModule {}

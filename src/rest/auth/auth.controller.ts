@@ -15,9 +15,15 @@ import { ApiOperation } from '@nestjs/swagger';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  @Post()
+  @Post('login')
   @ApiOperation({ summary: 'Authentification of User' })
   login(@Body() createAuthDto: AuthDto) {
     return this.authService.login(createAuthDto);
+  }
+
+  @Post('logout/:id')
+  @ApiOperation({ summary: 'Logout of User' })
+  logout(@Param('id') id: string) {
+    return this.authService.logout(id);
   }
 }

@@ -8,3 +8,15 @@ export class AuthDto {
   @ApiProperty({ example: 'string' })
   password: string;
 }
+
+export class AuthResponseDto {
+  user: {
+    id: string;
+    userName: string;
+    email: string;
+    avatar?: string;
+    isOnline: boolean;
+  };
+  accessToken: string;
+  refreshToken?: string;
+}
