@@ -1,19 +1,106 @@
 import { Injectable } from '@nestjs/common';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
+import { PrismaService } from '../../prisma/prisma.service';
+import { failAction, successAction } from '../../utils/action.dto';
 
 @Injectable()
 export class RoomsService {
-  create(createRoomDto: CreateRoomDto) {
-    return 'This action adds a new room';
+  constructor(private readonly prisma: PrismaService) {}
+  async create(createRoomDto: CreateRoomDto) {
+    try {
+      const existingRoom = await this.prisma.room.findFirst({
+        where: {
+          OR: [
+            { name: createRoomDto.name },
+            { description: createRoomDto.description },
+          ],
+        },
+      });
+      if (existingRoom) {
+        return failAction(
+          null,
+          false,
+          'Room with this name or description already exists',
+        );
+      }
+      const createdRoom = await this.prisma.room.create({
+        data: {
+          name: createRoomDto.name,
+          description: createRoomDto.description,
+          isDirectMessage: createRoomDto.isDirectMessage,
+        },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          isDirectMessage: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      if (createdRoom) {
+        return successAction(createdRoom, true, 'Room:Created successfuly !');
+      }
+      return failAction(null, false, 'Error during room creation !');
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
+    }
   }
 
-  findAll() {
-    return `This action returns all rooms`;
+  async findAll(page: number, page_size: number, search?: string) {
+    const skip = (page - 1) * page_size;
+    const where = {
+      ...(search?.trim() && {
+        OR: [
+          { name: { contains: search, mode: 'insensitive' as const } },
+          { description: { contains: search, mode: 'insensitive' as const } },
+        ],
+      }),
+    };
+
+    const [content, total] = await Promise.all([
+      this.prisma.room.findMany({
+        skip,
+        take: page_size,
+        where,
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          isDirectMessage: true,
+        },
+        orderBy: { createdAt: 'asc' as const },
+      }),
+      this.prisma.room.count({ where }),
+    ]);
+
+    return successAction(
+      { content, total, page, page_size },
+      true,
+      'Room: find successfully!',
+    );
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} room`;
+  async findById(id: string) {
+    const recoveredRoom = await this.prisma.room.findFirst({
+      where: {
+        id: id,
+      },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        isDirectMessage: true,
+      },
+    });
+
+    if (!recoveredRoom) {
+      return failAction(null, false, 'Room:not found !');
+    }
+    return successAction(recoveredRoom, true, 'Room:find successfuly !');
   }
 
   update(id: number, updateRoomDto: UpdateRoomDto) {

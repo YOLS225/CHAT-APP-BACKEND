@@ -10,11 +10,11 @@ export class CreateRoomMemberDto {
   @ApiProperty({ example: true })
   isActive?: boolean;
   @ApiProperty({ example: 'string' })
-  userId?: string;
-  @ApiProperty({ type: () => [User] })
-  user: User;
+  userId: string;
+  // @ApiProperty({ type: () => [User] })
+  // user: User;
   @ApiProperty({ example: 'string' })
-  roomId?: string;
-  @ApiProperty({ type: () => [Room] })
-  room: Room;
+  roomId: string;
+  // @ApiProperty({ type: () => [Room] })
+  // room: Room;
 }

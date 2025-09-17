@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { UsersService } from '../../business-logic/users/users.service';
 import { CreateUserDto } from '../../business-logic/users/dto/create-user.dto';
-import { ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../guard/jwt.guard';
 
 @Controller('users')
@@ -26,6 +26,7 @@ export class UsersController {
 
   @Get()
   @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiQuery({ name: 'search', required: false, type: String })
   findAll(
     @Query('page') page: string,
@@ -37,6 +38,7 @@ export class UsersController {
 
   @Get(':id')
   @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get an User' })
   findById(@Param('id') id: string) {
     return this.usersService.findById(id);
@@ -44,6 +46,7 @@ export class UsersController {
 
   @Patch(':id')
   @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Edit an User' })
   update(@Param('id') id: string, @Body() updateUserDto: CreateUserDto) {
     return this.usersService.updateUser(id, updateUserDto);
@@ -51,6 +54,7 @@ export class UsersController {
 
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Deactivate an User' })
   remove(@Param('id') id: string) {
     return this.usersService.deleteUser(id);
@@ -58,6 +62,7 @@ export class UsersController {
 
   @Delete('force/:id')
   @ApiOperation({ summary: 'Delete User' })
+  @ApiBearerAuth()
   forceRemove(@Param('id') id: string) {
     return this.usersService.deleteUserForce(id);
   }
