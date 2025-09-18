@@ -1,26 +1,118 @@
 import { Injectable } from '@nestjs/common';
 import { CreateRoomMemberDto } from './dto/create-room-member.dto';
 import { UpdateRoomMemberDto } from './dto/update-room-member.dto';
+import { PrismaService } from '../../prisma/prisma.service';
+import { failAction, successAction } from '../../utils/action.dto';
 
 @Injectable()
 export class RoomMembersService {
-  create(createRoomMemberDto: CreateRoomMemberDto) {
-    return 'This action adds a new roomMember';
+  constructor(private readonly prisma: PrismaService) {}
+  async joinRoom(createRoomMemberDto: CreateRoomMemberDto) {
+    try {
+      const existingMember = await this.prisma.roomMember.findFirst({
+        where: { userId: createRoomMemberDto.userId },
+      });
+      if (existingMember) {
+        return failAction(null, false, 'Room member already exists');
+      }
+
+      const newMember = await this.prisma.roomMember.create({
+        data: {
+          userId: createRoomMemberDto.userId,
+          roomId: createRoomMemberDto.roomId,
+        },
+        select: {
+          id: true,
+          userId: true,
+          roomId: true,
+          joinedAt: true,
+        },
+      });
+      if (newMember) {
+        return successAction(newMember, true, 'Room:Created successfuly !');
+      }
+    } catch (e) {
+      console.error(e);
+    }
   }
 
-  findAll() {
+  async findAll(page: number, page_size: number) {
+    const skip = (page - 1) * page_size;
+    const where = {};
+
+    const [content, total] = await Promise.all([
+      this.prisma.roomMember.findMany({
+        skip,
+        take: page_size,
+        where,
+        orderBy: { joinedAt: 'asc' as const },
+      }),
+      this.prisma.roomMember.count({ where }),
+    ]);
+    return successAction(
+      { content, total, page, page_size },
+      true,
+      'Members: find successfully!',
+    );
     return `This action returns all roomMembers`;
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} roomMember`;
+  async findById(id: string) {
+    const recoveredMember = await this.prisma.roomMember.findFirst({
+      where: { id: id },
+    });
+    if (!recoveredMember) {
+      return failAction(null, false, 'Member:not found !');
+    }
+    return successAction(recoveredMember, true, 'Member: find successfully!');
   }
 
-  update(id: number, updateRoomMemberDto: UpdateRoomMemberDto) {
+  update(id: string, updateRoomMemberDto: UpdateRoomMemberDto) {
     return `This action updates a #${id} roomMember`;
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} roomMember`;
+  async leaveRoom(id: string) {
+    const recoveredMember = await this.findById(id);
+    if (recoveredMember) {
+      try {
+        const memberUpdated = await this.prisma.roomMember.update({
+          where: { id: id },
+          data: {
+            isActive: false,
+          },
+        });
+        if (memberUpdated) {
+          return successAction(
+            memberUpdated,
+            true,
+            'Member:leaved successfuly !',
+          );
+        } else {
+          return failAction(null, false, 'Error during the action !');
+        }
+      } catch (e) {
+        console.error(e);
+        return failAction(null, false, 'Error during the action !');
+      }
+    }
+  }
+
+  async removeMember(id: string) {
+    const recoveredMember = await this.findById(id);
+    if (recoveredMember) {
+      try {
+        const memberUpdated = await this.prisma.roomMember.delete({
+          where: { id: id },
+        });
+        if (memberUpdated) {
+          return successAction(memberUpdated, true);
+        } else {
+          return failAction(null, false, 'Member:not found !');
+        }
+      } catch (e) {
+        console.error(e);
+        return failAction(null, false, 'Error during the action !');
+      }
+    }
   }
 }

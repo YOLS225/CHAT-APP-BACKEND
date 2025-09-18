@@ -103,11 +103,61 @@ export class RoomsService {
     return successAction(recoveredRoom, true, 'Room:find successfuly !');
   }
 
-  update(id: number, updateRoomDto: UpdateRoomDto) {
-    return `This action updates a #${id} room`;
+  async getPublicRooms(page: number, page_size: number, search?: string) {
+    const skip = (page - 1) * page_size;
+    const where = {
+      isDirectMessage: false,
+      ...(search?.trim() && {
+        OR: [
+          { name: { contains: search, mode: 'insensitive' as const } },
+          { description: { contains: search, mode: 'insensitive' as const } },
+        ],
+      }),
+    };
+    const [content, total] = await Promise.all([
+      this.prisma.room.findMany({
+        skip,
+        take: page_size,
+        where,
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          isDirectMessage: true,
+        },
+      }),
+      this.prisma.room.count({ where }),
+    ]);
+
+    return successAction(
+      { content, total, page, page_size },
+      true,
+      'Room: find successfully!',
+    );
   }
 
-  remove(id: number) {
+  async update(id: string, updateRoomDto: UpdateRoomDto) {
+    const recoveredRoom = await this.findById(id);
+    if (!recoveredRoom) {
+      return failAction(null, false, 'Room:not found !');
+    }
+    if (recoveredRoom) {
+      const updatedRoom = await this.prisma.room.update({
+        where: {
+          id: id,
+        },
+        data: {
+          name: updateRoomDto.name,
+          description: updateRoomDto.description,
+          updatedAt: new Date(),
+        },
+      });
+      if (updatedRoom)
+        return successAction(updatedRoom, true, 'Room:updated successfull!');
+    }
+  }
+
+  remove(id: string) {
     return `This action removes a #${id} room`;
   }
 }
