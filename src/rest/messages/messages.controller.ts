@@ -42,12 +42,20 @@ export class MessagesController {
     return this.messagesService.findOne(+id);
   }
 
+  @Get('room/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Create all messages for a room' })
+  findAllMessages(@Param('id') id: string) {
+    return this.messagesService.findAllMessages(id);
+  }
+
   @Patch(':id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Create a message' })
   update(@Param('id') id: string, @Body() updateMessageDto: UpdateMessageDto) {
-    return this.messagesService.update(+id, updateMessageDto);
+    return this.messagesService.update(id, updateMessageDto);
   }
 
   @Delete(':id')
@@ -55,6 +63,6 @@ export class MessagesController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Create a message' })
   remove(@Param('id') id: string) {
-    return this.messagesService.remove(+id);
+    return this.messagesService.remove(id);
   }
 }

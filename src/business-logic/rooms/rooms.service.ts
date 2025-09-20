@@ -136,6 +136,91 @@ export class RoomsService {
     );
   }
 
+  async getDirectMessageRooms(
+    page: number,
+    page_size: number,
+    search?: string,
+  ) {
+    const skip = (page - 1) * page_size;
+    const where = {
+      isDirectMessage: true,
+      ...(search?.trim() && {
+        OR: [
+          { name: { contains: search, mode: 'insensitive' as const } },
+          { description: { contains: search, mode: 'insensitive' as const } },
+        ],
+      }),
+    };
+
+    const [content, total] = await Promise.all([
+      this.prisma.room.findMany({
+        skip,
+        take: page_size,
+        where,
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          isDirectMessage: true,
+        },
+      }),
+      this.prisma.room.count({ where }),
+    ]);
+
+    return successAction(
+      { content, total, page, page_size },
+      true,
+      'Room: find successfully!',
+    );
+  }
+
+  async getRoomMembers(roomId: string) {
+    const roomMembers = await this.prisma.roomMember.findMany({
+      where: { roomId: roomId },
+      select: {
+        id: true,
+        userId: true,
+        roomId: true,
+        joinedAt: true,
+        role: true,
+        isActive: true,
+        user: {
+          select: {
+            id: true,
+            userName: true,
+          },
+        },
+      },
+    });
+    if (roomMembers) {
+      return successAction(roomMembers, true, 'Room:find successfully!');
+    } else {
+      return failAction(null, false, 'Room:not found !');
+    }
+  }
+
+  async getUserRooms(userId: string) {
+    const rooms = await this.prisma.roomMember.findMany({
+      where: { userId: userId },
+      select: {
+        id: true,
+        roomId: true,
+        room: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+          },
+        },
+      },
+    });
+    if (rooms) {
+      return successAction(rooms, true, 'Room:find successfully!');
+    } else {
+      return failAction(null, false, 'Room:not found !');
+    }
+  }
+
   async update(id: string, updateRoomDto: UpdateRoomDto) {
     const recoveredRoom = await this.findById(id);
     if (!recoveredRoom) {

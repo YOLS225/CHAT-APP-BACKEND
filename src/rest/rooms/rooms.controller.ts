@@ -57,12 +57,45 @@ export class RoomsController {
     );
   }
 
+  @Get('private')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get all private rooms' })
+  @ApiQuery({ name: 'search', required: false, type: String })
+  getDirectMessageRooms(
+    @Query('page') page: string,
+    @Query('page_size') page_size: string,
+    @Query('search') search?: string,
+  ) {
+    return this.roomsService.getDirectMessageRooms(
+      Number(page),
+      Number(page_size),
+      search,
+    );
+  }
+
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get a room' })
   findById(@Param('id') id: string) {
     return this.roomsService.findById(id);
+  }
+
+  @Get('members/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get all members in room' })
+  getRoomMembers(@Param('id') id: string) {
+    return this.roomsService.getRoomMembers(id);
+  }
+
+  @Get('user/rooms/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get all room for user' })
+  getUserRooms(@Param('id') id: string) {
+    return this.roomsService.getUserRooms(id);
   }
 
   @Patch(':id')
