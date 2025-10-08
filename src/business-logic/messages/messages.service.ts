@@ -7,20 +7,26 @@ import { failAction, successAction } from '../../utils/action.dto';
 @Injectable()
 export class MessagesService {
   constructor(private readonly prisma: PrismaService) {}
+
   async create(createMessageDto: CreateMessageDto) {
-    const message = await this.prisma.message.create({
-      data: {
-        content: createMessageDto.content,
-        roomId: createMessageDto.roomId,
-        senderId: createMessageDto.senderId,
-        isDeleted: createMessageDto.isDeleted,
-        type: createMessageDto.type || 'TEXT',
-      },
-    });
-    if (message) {
-      return successAction(message, true, 'Message:Created successfuly !');
-    } else {
-      return failAction(null, false, 'Error during message creation !');
+    try {
+      const message = await this.prisma.message.create({
+        data: {
+          content: createMessageDto.content,
+          roomId: createMessageDto.roomId,
+          senderId: createMessageDto.senderId,
+          isDeleted: createMessageDto.isDeleted,
+          type: createMessageDto.type || 'TEXT',
+        },
+      });
+      if (message) {
+        return successAction(message, true, 'Message:Created successfuly !');
+      } else {
+        return failAction(null, false, 'Error during message creation !');
+      }
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
     }
   }
 
@@ -29,27 +35,32 @@ export class MessagesService {
   }
 
   async findAllMessages(roomId: string) {
-    const messages = await this.prisma.message.findMany({
-      where: { roomId: roomId },
-      select: {
-        id: true,
-        content: true,
-        // roomId: true,
-        // senderId: true,
-        isDeleted: true,
-        type: true,
-        createdAt: true,
-        updatedAt: true,
-        sender: {
-          select: {
-            userName: true,
+    try {
+      const messages = await this.prisma.message.findMany({
+        where: { roomId: roomId },
+        select: {
+          id: true,
+          content: true,
+          // roomId: true,
+          // senderId: true,
+          isDeleted: true,
+          type: true,
+          createdAt: true,
+          updatedAt: true,
+          sender: {
+            select: {
+              userName: true,
+            },
           },
         },
-      },
-      orderBy: { createdAt: 'asc' as const },
-    });
+        orderBy: { createdAt: 'asc' as const },
+      });
 
-    return successAction(messages, true, 'Messages found');
+      return successAction(messages, true, 'Messages found');
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
+    }
   }
 
   findOne(id: number) {
@@ -57,31 +68,45 @@ export class MessagesService {
   }
 
   async update(id: string, updateMessageDto: UpdateMessageDto) {
-    const recoveredMessage = await this.prisma.message.findFirst({
-      where: { id: id },
-    });
-    if (recoveredMessage) {
-      const newMessage = await this.prisma.message.update({
+    try {
+      const recoveredMessage = await this.prisma.message.findFirst({
         where: { id: id },
-        data: {
-          content: updateMessageDto.content,
-        },
       });
-      if (newMessage) {
-        return successAction(newMessage, true, 'Message updated successfull !');
-      } else {
-        return failAction(null, false, 'Error during update message !');
+      if (recoveredMessage) {
+        const newMessage = await this.prisma.message.update({
+          where: { id: id },
+          data: {
+            content: updateMessageDto.content,
+          },
+        });
+        if (newMessage) {
+          return successAction(
+            newMessage,
+            true,
+            'Message updated successfull !',
+          );
+        } else {
+          return failAction(null, false, 'Error during update message !');
+        }
       }
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
     }
   }
 
   async remove(id: string) {
-    successAction(
-      await this.prisma.message.delete({
-        where: { id: id },
-      }),
-      true,
-      'Message removed successfull !',
-    );
+    try {
+      successAction(
+        await this.prisma.message.delete({
+          where: { id: id },
+        }),
+        true,
+        'Message removed successfull !',
+      );
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
+    }
   }
 }

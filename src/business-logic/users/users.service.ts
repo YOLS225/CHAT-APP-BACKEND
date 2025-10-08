@@ -61,23 +61,57 @@ export class UsersService {
   }
 
   async findAll(page: number, page_size: number, search?: string) {
-    const skip = (page - 1) * page_size;
+    try {
+      const skip = (page - 1) * page_size;
 
-    const where = {
-      status: { not: UserStatus.INACTIVE },
-      ...(search?.trim() && {
-        OR: [
-          { userName: { contains: search, mode: 'insensitive' as const } },
-          { email: { contains: search, mode: 'insensitive' as const } },
-        ],
-      }),
-    };
+      const where = {
+        status: { not: UserStatus.INACTIVE },
+        ...(search?.trim() && {
+          OR: [
+            { userName: { contains: search, mode: 'insensitive' as const } },
+            { email: { contains: search, mode: 'insensitive' as const } },
+          ],
+        }),
+      };
 
-    const [content, total] = await Promise.all([
-      this.prisma.user.findMany({
-        skip,
-        take: page_size,
-        where,
+      const [content, total] = await Promise.all([
+        this.prisma.user.findMany({
+          skip,
+          take: page_size,
+          where,
+          select: {
+            id: true,
+            userName: true,
+            email: true,
+            avatar: true,
+            isOnline: true,
+            createdAt: true,
+            updatedAt: true,
+            lastSeen: true,
+            status: true,
+          },
+          orderBy: { createdAt: 'asc' as const },
+        }),
+        this.prisma.user.count({ where }),
+      ]);
+
+      return successAction(
+        { content, total, page, page_size },
+        true,
+        'User: find successfully!',
+      );
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
+    }
+  }
+
+  async findById(id: string) {
+    try {
+      const recoveredUser = await this.prisma.user.findUnique({
+        where: {
+          id: id,
+        },
         select: {
           id: true,
           userName: true,
@@ -89,52 +123,27 @@ export class UsersService {
           lastSeen: true,
           status: true,
         },
-        orderBy: { createdAt: 'asc' as const },
-      }),
-      this.prisma.user.count({ where }),
-    ]);
-
-    return successAction(
-      { content, total, page, page_size },
-      true,
-      'User: find successfully!',
-    );
-  }
-
-  async findById(id: string) {
-    const recoveredUser = await this.prisma.user.findUnique({
-      where: {
-        id: id,
-      },
-      select: {
-        id: true,
-        userName: true,
-        email: true,
-        avatar: true,
-        isOnline: true,
-        createdAt: true,
-        updatedAt: true,
-        lastSeen: true,
-        status: true,
-      },
-    });
-    if (!recoveredUser) {
-      return failAction(null, false, 'User:not found !');
+      });
+      if (!recoveredUser) {
+        return failAction(null, false, 'User:not found !');
+      }
+      return successAction(recoveredUser, true, 'User:find successfuly !');
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
     }
-    return successAction(recoveredUser, true, 'User:find successfuly !');
   }
 
   async updateUser(id: string, updateUserDto: UpdateUserDto) {
-    const recoveredUser = await this.findById(id);
-    if (recoveredUser) {
-      try {
+    try {
+      const recoveredUser = await this.findById(id);
+      if (recoveredUser) {
         const updateData: any = {
           userName: updateUserDto.userName,
           avatar: updateUserDto.avatar,
           email: updateUserDto.email,
           status: updateUserDto.status,
         };
-
         const userUpdated = await this.prisma.user.update({
           where: {
             id: id,
@@ -144,23 +153,23 @@ export class UsersService {
         if (userUpdated) {
           return successAction(userUpdated, true, 'User:updated successfuly !');
         } else {
-          return failAction(null, false, 'Error during the action !');
+          return failAction(
+            null,
+            false,
+            "Erreur lors de la mise à jour de l'utilisateur",
+          );
         }
-      } catch (e) {
-        console.error(e);
-        return failAction(
-          null,
-          false,
-          "Erreur lors de la mise à jour de l'utilisateur",
-        );
       }
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
     }
   }
 
   async deleteUser(id: string) {
-    const recoveredUser = await this.findById(id);
-    if (recoveredUser) {
-      try {
+    try {
+      const recoveredUser = await this.findById(id);
+      if (recoveredUser) {
         const userUpdated = await this.prisma.user.update({
           where: {
             id: id,
@@ -172,20 +181,23 @@ export class UsersService {
         if (userUpdated) {
           return successAction(userUpdated, true, 'User:deleted successfuly !');
         } else {
-          return failAction(null, false, 'Error during the action !');
+          return failAction(
+            null,
+            false,
+            "Erreur lors de la mise à jour de l'utilisateur",
+          );
         }
-      } catch (e) {
-        console.error(e);
-        throw new Error('Errorr during maj of user');
       }
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
     }
-    return `User not found with id: ${id}`;
   }
 
   async deleteUserForce(id: string) {
-    const recoveredUser = await this.findById(id);
-    if (recoveredUser) {
-      try {
+    try {
+      const recoveredUser = await this.findById(id);
+      if (recoveredUser) {
         const userUpdated = await this.prisma.user.delete({
           where: {
             id: id,
@@ -194,13 +206,16 @@ export class UsersService {
         if (userUpdated) {
           return successAction(userUpdated, true, 'User:deleted successfuly !');
         } else {
-          return failAction(null, false, 'Error during the action !');
+          return failAction(
+            null,
+            false,
+            "Erreur lors de la suppression de l'utilisateur !",
+          );
         }
-      } catch (e) {
-        console.error(e);
-        throw new Error('Errorr during maj of user');
       }
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
     }
-    return `User not found with id: ${id}`;
   }
 }

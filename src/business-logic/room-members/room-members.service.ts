@@ -7,6 +7,7 @@ import { failAction, successAction } from '../../utils/action.dto';
 @Injectable()
 export class RoomMembersService {
   constructor(private readonly prisma: PrismaService) {}
+
   async joinRoom(createRoomMemberDto: CreateRoomMemberDto) {
     try {
       const existingMember = await this.prisma.roomMember.findFirst({
@@ -33,38 +34,48 @@ export class RoomMembersService {
       }
     } catch (e) {
       console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
     }
   }
 
   async findAll(page: number, page_size: number) {
-    const skip = (page - 1) * page_size;
-    const where = {};
+    try {
+      const skip = (page - 1) * page_size;
+      const where = {};
 
-    const [content, total] = await Promise.all([
-      this.prisma.roomMember.findMany({
-        skip,
-        take: page_size,
-        where,
-        orderBy: { joinedAt: 'asc' as const },
-      }),
-      this.prisma.roomMember.count({ where }),
-    ]);
-    return successAction(
-      { content, total, page, page_size },
-      true,
-      'Members: find successfully!',
-    );
-    return `This action returns all roomMembers`;
+      const [content, total] = await Promise.all([
+        this.prisma.roomMember.findMany({
+          skip,
+          take: page_size,
+          where,
+          orderBy: { joinedAt: 'asc' as const },
+        }),
+        this.prisma.roomMember.count({ where }),
+      ]);
+      return successAction(
+        { content, total, page, page_size },
+        true,
+        'Members: find successfully!',
+      );
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
+    }
   }
 
   async findById(id: string) {
-    const recoveredMember = await this.prisma.roomMember.findFirst({
-      where: { id: id },
-    });
-    if (!recoveredMember) {
-      return failAction(null, false, 'Member:not found !');
+    try {
+      const recoveredMember = await this.prisma.roomMember.findFirst({
+        where: { id: id },
+      });
+      if (!recoveredMember) {
+        return failAction(null, false, 'Member:not found !');
+      }
+      return successAction(recoveredMember, true, 'Member: find successfully!');
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
     }
-    return successAction(recoveredMember, true, 'Member: find successfully!');
   }
 
   update(id: string, updateRoomMemberDto: UpdateRoomMemberDto) {
@@ -72,9 +83,9 @@ export class RoomMembersService {
   }
 
   async leaveRoom(id: string) {
-    const recoveredMember = await this.findById(id);
-    if (recoveredMember) {
-      try {
+    try {
+      const recoveredMember = await this.findById(id);
+      if (recoveredMember) {
         const memberUpdated = await this.prisma.roomMember.update({
           where: { id: id },
           data: {
@@ -90,17 +101,17 @@ export class RoomMembersService {
         } else {
           return failAction(null, false, 'Error during the action !');
         }
-      } catch (e) {
-        console.error(e);
-        return failAction(null, false, 'Error during the action !');
       }
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
     }
   }
 
   async removeMember(id: string) {
-    const recoveredMember = await this.findById(id);
-    if (recoveredMember) {
-      try {
+    try {
+      const recoveredMember = await this.findById(id);
+      if (recoveredMember) {
         const memberUpdated = await this.prisma.roomMember.delete({
           where: { id: id },
         });
@@ -109,10 +120,10 @@ export class RoomMembersService {
         } else {
           return failAction(null, false, 'Member:not found !');
         }
-      } catch (e) {
-        console.error(e);
-        return failAction(null, false, 'Error during the action !');
       }
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
     }
   }
 }
