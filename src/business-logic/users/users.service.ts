@@ -138,17 +138,16 @@ export class UsersService {
     try {
       const recoveredUser = await this.findById(id);
       if (recoveredUser) {
-        const updateData: any = {
-          userName: updateUserDto.userName,
-          avatar: updateUserDto.avatar,
-          email: updateUserDto.email,
-          status: updateUserDto.status,
-        };
         const userUpdated = await this.prisma.user.update({
           where: {
             id: id,
           },
-          data: updateData,
+          data: {
+            userName: updateUserDto.userName,
+            avatar: updateUserDto.avatar,
+            email: updateUserDto.email,
+            status: updateUserDto.status,
+          },
         });
         if (userUpdated) {
           return successAction(userUpdated, true, 'User:updated successfuly !');

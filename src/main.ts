@@ -17,4 +17,4 @@ async function bootstrap() {
   await app.listen(PORT);
   console.log(`lien du swagger : http://localhost:${PORT}/api`);
 }
-bootstrap();
+void bootstrap();
