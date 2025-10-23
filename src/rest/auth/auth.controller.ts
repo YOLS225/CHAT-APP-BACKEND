@@ -1,12 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Patch,
-  Param,
-  Delete,
-} from '@nestjs/common';
+import { Controller, Post, Body, Param } from '@nestjs/common';
 import { AuthService } from '../../business-logic/auth/auth.service';
 import { AuthDto } from '../../business-logic/auth/dto/auth.dto';
 import { ApiOperation } from '@nestjs/swagger';

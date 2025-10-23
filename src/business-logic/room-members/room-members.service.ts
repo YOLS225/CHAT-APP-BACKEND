@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { CreateRoomMemberDto } from './dto/create-room-member.dto';
-import { UpdateRoomMemberDto } from './dto/update-room-member.dto';
+// import { UpdateRoomMemberDto } from './dto/update-room-member.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { failAction, successAction } from '../../utils/action.dto';
 
@@ -78,9 +78,9 @@ export class RoomMembersService {
     }
   }
 
-  update(id: string, updateRoomMemberDto: UpdateRoomMemberDto) {
-    return `This action updates a #${id} roomMember`;
-  }
+  // update(id: string, updateRoomMemberDto: UpdateRoomMemberDto) {
+  //   return `This action updates a #${id} roomMember`;
+  // }
 
   async leaveRoom(id: string) {
     try {
