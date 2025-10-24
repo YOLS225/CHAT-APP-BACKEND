@@ -32,45 +32,24 @@ export class RoomsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get all rooms' })
   @ApiQuery({ name: 'search', required: false, type: String })
+  @ApiQuery({ name: 'isDirectMessage', required: false, type: Boolean })
   findAll(
     @Query('page') page: string,
     @Query('page_size') page_size: string,
     @Query('search') search?: string,
+    @Query('isDirectMessage') isDirectMessage?: string,
   ) {
-    return this.roomsService.findAll(Number(page), Number(page_size), search);
-  }
-
-  @Get('public')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get all public rooms' })
-  @ApiQuery({ name: 'search', required: false, type: String })
-  getPublicRooms(
-    @Query('page') page: string,
-    @Query('page_size') page_size: string,
-    @Query('search') search?: string,
-  ) {
-    return this.roomsService.getPublicRooms(
+    const isDirectMessageBool =
+      isDirectMessage === 'true'
+        ? true
+        : isDirectMessage === 'false'
+          ? false
+          : undefined;
+    return this.roomsService.findAll(
       Number(page),
       Number(page_size),
       search,
-    );
-  }
-
-  @Get('private')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get all private rooms' })
-  @ApiQuery({ name: 'search', required: false, type: String })
-  getDirectMessageRooms(
-    @Query('page') page: string,
-    @Query('page_size') page_size: string,
-    @Query('search') search?: string,
-  ) {
-    return this.roomsService.getDirectMessageRooms(
-      Number(page),
-      Number(page_size),
-      search,
+      isDirectMessageBool,
     );
   }
 
@@ -93,9 +72,19 @@ export class RoomsController {
   @Get('user/rooms/:id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get all room for user' })
-  getUserRooms(@Param('id') id: string) {
-    return this.roomsService.getUserRooms(id);
+  @ApiOperation({ summary: 'Get rooms (chat/groups) for user' })
+  @ApiQuery({ name: 'isDirectMessage', required: false, type: Boolean })
+  getUserRooms(
+    @Param('id') id: string,
+    @Query('isDirectMessage') isDirectMessage?: string,
+  ) {
+    const isDirectMessageBool =
+      isDirectMessage === 'true'
+        ? true
+        : isDirectMessage === 'false'
+          ? false
+          : undefined;
+    return this.roomsService.getUserRooms(id, isDirectMessageBool);
   }
 
   @Patch(':id')

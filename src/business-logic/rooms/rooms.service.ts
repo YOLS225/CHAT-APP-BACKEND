@@ -50,7 +50,12 @@ export class RoomsService {
     }
   }
 
-  async findAll(page: number, page_size: number, search?: string) {
+  async findAll(
+    page: number,
+    page_size: number,
+    search?: string,
+    isDirectMessage?: boolean,
+  ) {
     try {
       const skip = (page - 1) * page_size;
       const where = {
@@ -59,6 +64,9 @@ export class RoomsService {
             { name: { contains: search, mode: 'insensitive' as const } },
             { description: { contains: search, mode: 'insensitive' as const } },
           ],
+        }),
+        ...(isDirectMessage !== undefined && {
+          isDirectMessage: isDirectMessage,
         }),
       };
 
@@ -113,87 +121,6 @@ export class RoomsService {
     }
   }
 
-  async getPublicRooms(page: number, page_size: number, search?: string) {
-    try {
-      const skip = (page - 1) * page_size;
-      const where = {
-        isDirectMessage: false,
-        ...(search?.trim() && {
-          OR: [
-            { name: { contains: search, mode: 'insensitive' as const } },
-            { description: { contains: search, mode: 'insensitive' as const } },
-          ],
-        }),
-      };
-      const [content, total] = await Promise.all([
-        this.prisma.room.findMany({
-          skip,
-          take: page_size,
-          where,
-          select: {
-            id: true,
-            name: true,
-            description: true,
-            isDirectMessage: true,
-          },
-        }),
-        this.prisma.room.count({ where }),
-      ]);
-
-      return successAction(
-        { content, total, page, page_size },
-        true,
-        'Room: find successfully!',
-      );
-    } catch (e) {
-      console.error(e);
-      return failAction(null, false, `Error during action: ${e}`);
-    }
-  }
-
-  async getDirectMessageRooms(
-    page: number,
-    page_size: number,
-    search?: string,
-  ) {
-    try {
-      const skip = (page - 1) * page_size;
-      const where = {
-        isDirectMessage: true,
-        ...(search?.trim() && {
-          OR: [
-            { name: { contains: search, mode: 'insensitive' as const } },
-            { description: { contains: search, mode: 'insensitive' as const } },
-          ],
-        }),
-      };
-
-      const [content, total] = await Promise.all([
-        this.prisma.room.findMany({
-          skip,
-          take: page_size,
-          where,
-          select: {
-            id: true,
-            name: true,
-            description: true,
-            isDirectMessage: true,
-          },
-        }),
-        this.prisma.room.count({ where }),
-      ]);
-
-      return successAction(
-        { content, total, page, page_size },
-        true,
-        'Room: find successfully!',
-      );
-    } catch (e) {
-      console.error(e);
-      return failAction(null, false, `Error during action: ${e}`);
-    }
-  }
-
   async getRoomMembers(roomId: string) {
     try {
       const roomMembers = await this.prisma.roomMember.findMany({
@@ -224,10 +151,17 @@ export class RoomsService {
     }
   }
 
-  async getUserRooms(userId: string) {
+  async getUserRooms(userId: string, isDirectMessage?: boolean) {
     try {
       const rooms = await this.prisma.roomMember.findMany({
-        where: { userId: userId },
+        where: {
+          userId: userId,
+          ...(isDirectMessage !== undefined && {
+            room: {
+              isDirectMessage: isDirectMessage,
+            },
+          }),
+        },
         select: {
           id: true,
           roomId: true,
@@ -236,6 +170,7 @@ export class RoomsService {
               id: true,
               name: true,
               description: true,
+              isDirectMessage: true,
             },
           },
         },

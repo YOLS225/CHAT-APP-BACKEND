@@ -29,7 +29,7 @@ export class MessagesController {
   @Get()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Create a message' })
+  @ApiOperation({ summary: 'Get all messages' })
   findAll() {
     return this.messagesService.findAll();
   }
@@ -37,7 +37,7 @@ export class MessagesController {
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Create a message' })
+  @ApiOperation({ summary: 'Get a message' })
   findOne(@Param('id') id: string) {
     return this.messagesService.findOne(+id);
   }
@@ -45,7 +45,7 @@ export class MessagesController {
   @Get('room/:id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Create all messages for a room' })
+  @ApiOperation({ summary: 'Get all messages for a room' })
   findAllMessages(@Param('id') id: string) {
     return this.messagesService.findAllMessages(id);
   }
@@ -53,7 +53,7 @@ export class MessagesController {
   @Patch(':id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Create a message' })
+  @ApiOperation({ summary: 'Edit a message' })
   update(@Param('id') id: string, @Body() updateMessageDto: UpdateMessageDto) {
     return this.messagesService.update(id, updateMessageDto);
   }
@@ -61,7 +61,7 @@ export class MessagesController {
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Create a message' })
+  @ApiOperation({ summary: 'Delete a message' })
   remove(@Param('id') id: string) {
     return this.messagesService.remove(id);
   }
