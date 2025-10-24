@@ -163,20 +163,74 @@ export class RoomsService {
           }),
         },
         select: {
-          id: true,
-          roomId: true,
+          // id: true,
+          // roomId: true,
           room: {
             select: {
               id: true,
               name: true,
               description: true,
               isDirectMessage: true,
+              members: {
+                select: {
+                  userId: true,
+                  user: {
+                    select: {
+                      id: true,
+                      userName: true,
+                      avatar: true,
+                      isOnline: true,
+                    },
+                  },
+                },
+              },
             },
           },
         },
       });
-      if (rooms) {
-        return successAction(rooms, true, 'Room:find successfully!');
+
+      // Pour les DMs, remplacer le nom de la room par le nom de l'autre utilisateur
+      const roomsWithDisplayName = rooms.map((roomMember) => {
+        let displayName = roomMember.room.name;
+        let otherUser: {
+          id: string;
+          userName: string;
+          avatar: string | null;
+          isOnline: boolean;
+        } | null = null;
+
+        if (roomMember.room.isDirectMessage) {
+          // Trouver l'autre utilisateur (pas celui qui fait la requête)
+          const otherMember = roomMember.room.members.find(
+            (member) => member.userId !== userId,
+          );
+          if (otherMember) {
+            displayName = otherMember.user.userName;
+            otherUser = otherMember.user;
+          }
+        }
+
+        return {
+          // id: roomMember.id,
+          // roomId: roomMember.roomId,
+          // room: {
+          //
+          // },
+          id: roomMember.room.id,
+          name: roomMember.room.name,
+          displayName: displayName,
+          description: roomMember.room.description,
+          isDirectMessage: roomMember.room.isDirectMessage,
+          otherUser: otherUser,
+        };
+      });
+
+      if (roomsWithDisplayName) {
+        return successAction(
+          roomsWithDisplayName,
+          true,
+          'Room:find successfully!',
+        );
       } else {
         return failAction(null, false, 'Room:not found !');
       }

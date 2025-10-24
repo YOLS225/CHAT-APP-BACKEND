@@ -4,6 +4,15 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // Configuration CORS
+  app.enableCors({
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000', // URL de votre frontend
+    credentials: true, // Permet l'envoi de cookies/credentials
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
+
   const config = new DocumentBuilder()
     .setTitle('CHAT-APP BACKEND')
     .setDescription('CHAT-APP BACKEND API')

@@ -69,7 +69,7 @@ export class RoomsController {
     return this.roomsService.getRoomMembers(id);
   }
 
-  @Get('user/rooms/:id')
+  @Get('user-rooms/:id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get rooms (chat/groups) for user' })
