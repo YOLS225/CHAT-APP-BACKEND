@@ -163,8 +163,6 @@ export class RoomsService {
           }),
         },
         select: {
-          // id: true,
-          // roomId: true,
           room: {
             select: {
               id: true,
@@ -183,6 +181,21 @@ export class RoomsService {
                     },
                   },
                 },
+              },
+              messages: {
+                select: {
+                  content: true,
+                  senderId: true,
+                  sender: {
+                    select: {
+                      userName: true,
+                    },
+                  },
+                },
+                orderBy: {
+                  createdAt: 'desc' as const,
+                },
+                take: 1,
               },
             },
           },
@@ -210,18 +223,23 @@ export class RoomsService {
           }
         }
 
+        // Construire le dernier message au format "username: message"
+        let lastMessage: string | null = null;
+        if (roomMember.room.messages.length > 0) {
+          const lastMsg = roomMember.room.messages[0];
+          const senderName =
+            lastMsg.senderId === userId ? 'Vous' : lastMsg.sender.userName;
+          lastMessage = `${senderName}: ${lastMsg.content}`;
+        }
+
         return {
-          // id: roomMember.id,
-          // roomId: roomMember.roomId,
-          // room: {
-          //
-          // },
           id: roomMember.room.id,
           name: roomMember.room.name,
           displayName: displayName,
           description: roomMember.room.description,
           isDirectMessage: roomMember.room.isDirectMessage,
           otherUser: otherUser,
+          lastMessage: lastMessage,
         };
       });
 

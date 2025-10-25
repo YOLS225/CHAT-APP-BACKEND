@@ -10,11 +10,18 @@ export class RoomMembersService {
 
   async joinRoom(createRoomMemberDto: CreateRoomMemberDto) {
     try {
-      const existingMember = await this.prisma.roomMember.findFirst({
-        where: { userId: createRoomMemberDto.userId },
+      // Vérifier si cet utilisateur est déjà dans cette room spécifique
+      const existingMember = await this.prisma.roomMember.findUnique({
+        where: {
+          userId_roomId: {
+            userId: createRoomMemberDto.userId,
+            roomId: createRoomMemberDto.roomId,
+          },
+        },
       });
+
       if (existingMember) {
-        return failAction(null, false, 'Room member already exists');
+        return failAction(null, false, 'User is already a member of this room');
       }
 
       const newMember = await this.prisma.roomMember.create({
