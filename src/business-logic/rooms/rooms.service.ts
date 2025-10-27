@@ -151,7 +151,11 @@ export class RoomsService {
     }
   }
 
-  async getUserRooms(userId: string, isDirectMessage?: boolean) {
+  async getUserRooms(
+    userId: string,
+    isDirectMessage?: boolean,
+    search?: string,
+  ) {
     try {
       const rooms = await this.prisma.roomMember.findMany({
         where: {
@@ -203,7 +207,7 @@ export class RoomsService {
       });
 
       // Pour les DMs, remplacer le nom de la room par le nom de l'autre utilisateur
-      const roomsWithDisplayName = rooms.map((roomMember) => {
+      let roomsWithDisplayName = rooms.map((roomMember) => {
         let displayName = roomMember.room.name;
         let otherUser: {
           id: string;
@@ -242,6 +246,20 @@ export class RoomsService {
           lastMessage: lastMessage,
         };
       });
+
+      // Appliquer le filtre de recherche
+      if (search?.trim()) {
+        const searchLower = search.toLowerCase();
+        roomsWithDisplayName = roomsWithDisplayName.filter((room) => {
+          if (room.isDirectMessage) {
+            // Pour les DMs, rechercher sur displayName
+            return room.displayName.toLowerCase().includes(searchLower);
+          } else {
+            // Pour les rooms normales, rechercher sur name
+            return room.name.toLowerCase().includes(searchLower);
+          }
+        });
+      }
 
       if (roomsWithDisplayName) {
         return successAction(

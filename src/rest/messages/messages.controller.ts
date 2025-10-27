@@ -7,12 +7,13 @@ import {
   Param,
   Delete,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import { MessagesService } from '../../business-logic/messages/messages.service';
 import { CreateMessageDto } from '../../business-logic/messages/dto/create-message.dto';
 import { UpdateMessageDto } from '../../business-logic/messages/dto/update-message.dto';
 import { JwtAuthGuard } from '../../guard/jwt.guard';
-import { ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
 
 @Controller('messages')
 export class MessagesController {
@@ -46,8 +47,9 @@ export class MessagesController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get all messages for a room' })
-  findAllMessages(@Param('id') id: string) {
-    return this.messagesService.findAllMessages(id);
+  @ApiQuery({ name: 'search', required: false, type: String })
+  findAllMessages(@Param('id') id: string, @Query('search') search?: string) {
+    return this.messagesService.findAllMessages(id, search);
   }
 
   @Patch(':id')

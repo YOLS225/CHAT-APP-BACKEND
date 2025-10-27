@@ -74,9 +74,11 @@ export class RoomsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get rooms (chat/groups) for user' })
   @ApiQuery({ name: 'isDirectMessage', required: false, type: Boolean })
+  @ApiQuery({ name: 'search', required: false, type: String })
   getUserRooms(
     @Param('id') id: string,
     @Query('isDirectMessage') isDirectMessage?: string,
+    @Query('search') search?: string,
   ) {
     const isDirectMessageBool =
       isDirectMessage === 'true'
@@ -84,7 +86,7 @@ export class RoomsController {
         : isDirectMessage === 'false'
           ? false
           : undefined;
-    return this.roomsService.getUserRooms(id, isDirectMessageBool);
+    return this.roomsService.getUserRooms(id, isDirectMessageBool, search);
   }
 
   @Patch(':id')

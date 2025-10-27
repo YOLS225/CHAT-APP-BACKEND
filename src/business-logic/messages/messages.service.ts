@@ -34,10 +34,15 @@ export class MessagesService {
     return `This action returns all messages`;
   }
 
-  async findAllMessages(roomId: string) {
+  async findAllMessages(roomId: string, search?: string) {
     try {
       const messages = await this.prisma.message.findMany({
-        where: { roomId: roomId },
+        where: {
+          roomId: roomId,
+          ...(search?.trim() && {
+            content: { contains: search.trim(), mode: 'insensitive' as const },
+          }),
+        },
         select: {
           id: true,
           content: true,
