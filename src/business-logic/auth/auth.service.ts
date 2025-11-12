@@ -3,7 +3,11 @@ import { AuthDto } from './dto/auth.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { compare } from 'bcrypt';
 import { failAction, successAction } from '../../utils/action.dto';
-import { signJwt } from '../../guard/jwt.strategy';
+import {
+  signJwt,
+  signRefreshJwt,
+  verifyRefreshJwt,
+} from '../../guard/jwt.strategy';
 
 @Injectable()
 export class AuthService {
@@ -46,10 +50,13 @@ export class AuthService {
             userName: recoveredUser.userName,
           };
 
-          // recuperation du JWT
+          // Génération des tokens
           const accessToken = signJwt(payload);
+          const refreshToken = signRefreshJwt({ sub: recoveredUser.id });
+
           const data = {
             token: accessToken,
+            refreshToken: refreshToken,
             user: {
               id: recoveredUser.id,
               userName: recoveredUser.userName,
@@ -90,6 +97,52 @@ export class AuthService {
     } catch (e) {
       console.error(e);
       return failAction(null, false, `Error during action: ${e}`);
+    }
+  }
+
+  async refreshToken(refreshToken: string) {
+    try {
+      // 1. Vérifier que le refresh token est valide
+      const decoded = verifyRefreshJwt(refreshToken);
+
+      if (!decoded || !decoded.sub) {
+        return failAction(null, false, 'Invalid or expired refresh token');
+      }
+
+      // 2. Récupérer l'utilisateur de la base de données
+      const user = await this.prisma.user.findUnique({
+        where: { id: decoded.sub },
+      });
+
+      if (!user) {
+        return failAction(null, false, 'User not found');
+      }
+
+      // 3. Vérifier que l'utilisateur est toujours actif
+      if (user.status !== 'ACTIVE') {
+        return failAction(null, false, 'User is not active');
+      }
+
+      // 4. Générer un NOUVEAU access token
+      const payload = {
+        sub: user.id,
+        email: user.email,
+        userName: user.userName,
+      };
+
+      const newAccessToken = signJwt(payload);
+      const newRefreshToken = signRefreshJwt({ sub: payload.sub });
+
+      // 5. Retourner le nouveau access token
+      const data = {
+        token: newAccessToken,
+        refreshToken: newRefreshToken,
+      };
+
+      return successAction(data, true, 'Token refreshed successfully');
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during token refresh: ${e}`);
     }
   }
 }

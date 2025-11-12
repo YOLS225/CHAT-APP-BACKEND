@@ -9,21 +9,21 @@ export class RoomsService {
   constructor(private readonly prisma: PrismaService) {}
   async create(createRoomDto: CreateRoomDto) {
     try {
-      const existingRoom = await this.prisma.room.findFirst({
-        where: {
-          OR: [
-            { name: createRoomDto.name },
-            { description: createRoomDto.description },
-          ],
-        },
-      });
-      if (existingRoom) {
-        return failAction(
-          null,
-          false,
-          'Room with this name or description already exists',
-        );
-      }
+      // const existingRoom = await this.prisma.room.findFirst({
+      //   where: {
+      //     OR: [
+      //       { name: createRoomDto.name },
+      //       { description: createRoomDto.description },
+      //     ],
+      //   },
+      // });
+      // if (existingRoom) {
+      //   return failAction(
+      //     null,
+      //     false,
+      //     'Room with this name or description already exists',
+      //   );
+      // }
       const createdRoom = await this.prisma.room.create({
         data: {
           name: createRoomDto.name,
@@ -302,9 +302,22 @@ export class RoomsService {
     }
   }
 
-  remove(id: string) {
+  async remove(id: string) {
     try {
-      return `This action removes a #${id} room`;
+      const recoveredRoom = await this.findById(id);
+      if (!recoveredRoom) {
+        return failAction(null, false, 'Room:not found !');
+      }
+      if (recoveredRoom) {
+        const deletedRoom = await this.prisma.room.delete({
+          where: {
+            id: id,
+          },
+        });
+
+        if (deletedRoom)
+          return successAction(deletedRoom, true, 'Room:deleted successfull!');
+      }
     } catch (e) {
       console.error(e);
       return failAction(null, false, `Error during action: ${e}`);

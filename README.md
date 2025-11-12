@@ -1,98 +1,301 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Chat Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
-
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Backend d'application de chat en temps réel développé avec NestJS, TypeScript et PostgreSQL.
 
 ## Description
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+Application backend permettant la gestion d'utilisateurs, de salles de discussion (rooms), de messages et de membres de salles avec un système d'authentification JWT et de rôles.
 
-## Project setup
+## Architecture
 
-```bash
-$ npm install
+### Structure du projet
+
+```
+src/
+├── rest/                    # Couche de présentation (Controllers REST)
+│   ├── auth/               # Endpoints d'authentification
+│   ├── messages/           # Endpoints de gestion des messages
+│   ├── rooms/              # Endpoints de gestion des salles
+│   ├── room-members/       # Endpoints de gestion des membres
+│   └── users/              # Endpoints de gestion des utilisateurs
+├── business-logic/          # Couche métier (Services)
+│   ├── auth/               # Logique d'authentification
+│   ├── messages/           # Logique métier des messages
+│   ├── rooms/              # Logique métier des salles
+│   ├── room-members/       # Logique métier des membres
+│   └── users/              # Logique métier des utilisateurs
+├── guard/                   # Sécurité (JWT Guards & Strategies)
+├── prisma/                  # Couche d'accès aux données
+├── utils/                   # Utilitaires
+└── config/                  # Configuration
 ```
 
-## Compile and run the project
+### Principes architecturaux
+
+- Séparation claire entre les contrôleurs REST et la logique métier
+- Pattern Service-Repository (via Prisma)
+- Modules NestJS pour l'encapsulation et l'injection de dépendances
+- Architecture en couches (Layered Architecture)
+
+## Technologies utilisées
+
+### Framework & Runtime
+- **NestJS 11.x** - Framework Node.js progressif
+- **Node.js** avec **TypeScript 5.7**
+- **Express** - Serveur HTTP
+
+### Base de données & ORM
+- **PostgreSQL 16.2** - Base de données relationnelle
+- **Prisma 6.15** - ORM moderne avec génération de types TypeScript
+- Migrations gérées par Prisma
+
+### Authentification & Sécurité
+- **JWT (jsonwebtoken)** - Authentification par tokens
+- **bcrypt 6.0** - Hachage sécurisé des mots de passe
+- Guards et Strategies personnalisés pour NestJS
+
+### Validation & Documentation
+- **class-validator** & **class-transformer** - Validation des DTOs
+- **Swagger (@nestjs/swagger)** - Documentation API interactive
+
+### Outils de développement
+- **Jest** - Framework de tests (unitaires et e2e)
+- **ESLint** & **Prettier** - Linting et formatage de code
+- **Docker Compose** - Orchestration des services
+- **ts-node** & **ts-jest** - Exécution TypeScript
+
+## Modèle de données
+
+### Entités principales
+
+**User** - Utilisateurs de l'application
+- `id` (UUID)
+- `userName` (unique)
+- `email` (unique)
+- `password` (hashé)
+- `avatar` (optionnel)
+- `isOnline` (boolean)
+- `lastSeen` (timestamp)
+- `status` (ACTIVE, INACTIVE, BANNED, SUSPENDED)
+
+**Room** - Salles de discussion
+- `id` (UUID)
+- `name`
+- `description` (optionnel)
+- `isPrivate` (boolean)
+- `isDirectMessage` (boolean)
+- `maxMembers` (défaut: 100)
+- `isActive` (boolean)
+
+**Message** - Messages envoyés dans les salles
+- `id` (UUID)
+- `content`
+- `type` (TEXT, IMAGE, FILE, SYSTEM)
+- `senderId` (référence User)
+- `roomId` (référence Room)
+- `editedAt` (optionnel)
+- `isDeleted` (boolean)
+
+**RoomMember** - Membres d'une salle
+- `id` (UUID)
+- `userId` (référence User)
+- `roomId` (référence Room)
+- `role` (OWNER, ADMIN, MODERATOR, MEMBER)
+- `joinedAt` (timestamp)
+- `isActive` (boolean)
+
+### Relations
+
+- Un utilisateur peut envoyer plusieurs messages
+- Un utilisateur peut être membre de plusieurs rooms
+- Une room contient plusieurs messages et membres
+- Relations avec suppression en cascade (onDelete: Cascade)
+
+## Installation
 
 ```bash
-# development
-$ npm run start
+# Installer les dépendances
+npm install
 
-# watch mode
-$ npm run start:dev
+# Configurer les variables d'environnement
+cp .env.example .env
+# Éditer .env avec vos configurations
 
-# production mode
-$ npm run start:prod
+# Démarrer la base de données PostgreSQL
+docker-compose up -d
+
+# Générer le client Prisma
+npm run db:generate
+
+# Exécuter les migrations
+npm run db:migrate
 ```
 
-## Run tests
+## Configuration
+
+Créer un fichier `.env` à la racine avec les variables suivantes:
+
+```env
+# Database
+DATABASE_URL="postgresql://postgres:postgres@localhost:5469/postgres"
+
+# Server
+PORT=3001
+FRONTEND_URL="http://localhost:3000"
+
+# JWT - Access Token (courte durée - 15 minutes)
+JWT_SECRET="your-secret-key-change-this-in-production"
+JWT_ACCESS_EXPIRES_IN="15m"
+
+# JWT - Refresh Token (longue durée - 7 jours)
+JWT_REFRESH_SECRET="your-refresh-secret-key-change-this-in-production"
+JWT_REFRESH_EXPIRES_IN="7d"
+```
+
+Vous pouvez copier le fichier `.env.example` et le renommer en `.env` pour démarrer rapidement.
+
+## Scripts disponibles
+
+### Développement
 
 ```bash
-# unit tests
-$ npm run test
+# Démarrer en mode développement
+npm run start:dev
 
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+# Démarrer avec debug
+npm run start:debug
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+### Production
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+# Build du projet
+npm run build
+
+# Démarrer en production
+npm run start:prod
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+### Base de données
 
-## Resources
+```bash
+# Générer le client Prisma
+npm run db:generate
 
-Check out a few resources that may come in handy when working with NestJS:
+# Créer une migration
+npm run db:migrate
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+# Réinitialiser la base de données
+npm run db:reset
 
-## Support
+# Voir le statut des migrations
+npm run db:status
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+# Ouvrir Prisma Studio (interface graphique)
+npm run db:studio
+```
 
-## Stay in touch
+### Tests
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+```bash
+# Tests unitaires
+npm run test
+
+# Tests en mode watch
+npm run test:watch
+
+# Tests e2e
+npm run test:e2e
+
+# Couverture de code
+npm run test:cov
+```
+
+### Code Quality
+
+```bash
+# Linter
+npm run lint
+
+# Formatter
+npm run format
+```
+
+## Fonctionnalités
+
+- Authentification JWT avec guards
+- Gestion complète des utilisateurs (CRUD, statut en ligne)
+- Système de salles publiques et privées
+- Messages directs (DM) entre utilisateurs
+- Messages avec support texte, images et fichiers
+- Système de rôles granulaire (propriétaire, admin, modérateur, membre)
+- Gestion des statuts utilisateurs (actif, inactif, banni, suspendu)
+- Soft delete pour les messages
+- Documentation API interactive via Swagger
+- CORS configuré pour intégration frontend
+
+## Documentation API
+
+Une fois l'application démarrée, la documentation Swagger est accessible à:
+
+```
+http://localhost:3001/api
+```
+
+## Architecture de sécurité
+
+### Authentification JWT avec Refresh Token
+
+L'application utilise un système d'authentification à deux tokens pour une sécurité renforcée:
+
+**Access Token (courte durée - 15 minutes)**
+- Utilisé pour authentifier chaque requête API
+- Contient les informations utilisateur (id, email, userName)
+- Expire rapidement pour limiter les risques en cas de vol
+
+**Refresh Token (longue durée - 7 jours)**
+- Utilisé uniquement pour obtenir un nouveau access token
+- Contient uniquement l'ID utilisateur
+- N'est pas stocké en base de données (stateless)
+- Doit être conservé de manière sécurisée côté client
+
+**Flux d'authentification:**
+
+1. **Login** (`POST /auth/login`)
+   - Envoyer email et password
+   - Recevoir accessToken et refreshToken
+   - Stocker les deux tokens côté client (localStorage, sessionStorage, ou cookies HTTP-only)
+
+2. **Requêtes API authentifiées**
+   - Ajouter le header: `Authorization: Bearer {accessToken}`
+   - Si le token est expiré (401), utiliser le refresh token
+
+3. **Rafraîchir le token** (`POST /auth/refresh`)
+   - Envoyer le refreshToken dans le body
+   - Recevoir un nouveau accessToken
+   - Mettre à jour l'accessToken stocké
+
+4. **Logout** (`POST /auth/logout/:id`)
+   - Supprimer les tokens côté client
+   - Mettre l'utilisateur hors ligne côté serveur
+
+**Autres mesures de sécurité:**
+- Hachage des mots de passe avec bcrypt
+- Guards NestJS pour protéger les routes
+- Validation des données avec class-validator
+- CORS configuré pour autoriser uniquement les origines de confiance
+- Vérification du statut utilisateur (ACTIVE) à chaque authentification
+
+## Base de données
+
+PostgreSQL est exécuté dans un conteneur Docker:
+- Port: 5469
+- User: postgres
+- Password: postgres
+- Database: postgres
+
+Les données sont persistées dans un volume Docker `chat-backend_postgres_data`.
 
 ## License
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+UNLICENSED - Projet privé
