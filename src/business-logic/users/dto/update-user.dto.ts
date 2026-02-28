@@ -1,25 +1,29 @@
-import { PartialType } from '@nestjs/mapped-types';
-import { CreateUserDto } from './create-user.dto';
 import { ApiProperty } from '@nestjs/swagger';
-import { UserStatus } from '../../../utils/types';
+import { IsEmail, IsOptional, IsString } from 'class-validator';
 
-export class UpdateUserDto extends PartialType(CreateUserDto) {
-  id?: string;
-  @ApiProperty({ example: 'string' })
-  userName: string;
-  @ApiProperty({ example: 'string' })
-  email: string;
-  @ApiProperty({ example: 'string' })
-  password: string;
-  @ApiProperty({ example: 'string' })
+export class UpdateUserDto {
+  @ApiProperty({ example: 'johndoe', required: false })
+  @IsOptional()
+  @IsString()
+  userName?: string;
+
+  @ApiProperty({ example: 'john@example.com', required: false })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @ApiProperty({ example: 'https://...', required: false })
+  @IsOptional()
+  @IsString()
   avatar?: string;
-  @ApiProperty({ example: true })
-  isOnline?: boolean;
-  createdAt?: Date;
-  // @ApiProperty({ type: () => [Message] })
-  // sentMessages: Message[];
-  // @ApiProperty({ type: () => [RoomMember] })
-  // roomMemberships: RoomMember[];
-  @ApiProperty({ enum: UserStatus, example: UserStatus.ACTIVE })
-  status?: UserStatus;
+}
+
+export class UpdatePasswordDto {
+  @ApiProperty({ example: 'currentPassword123' })
+  @IsString()
+  currentPassword: string;
+
+  @ApiProperty({ example: 'newPassword123' })
+  @IsString()
+  newPassword: string;
 }

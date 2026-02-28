@@ -55,6 +55,7 @@ export class MessagesService {
           sender: {
             select: {
               userName: true,
+              avatar: true,
             },
           },
         },
@@ -102,13 +103,28 @@ export class MessagesService {
 
   async remove(id: string) {
     try {
-      successAction(
-        await this.prisma.message.delete({
+      const recoveredMessage = await this.prisma.message.findFirst({
+        where: { id: id },
+      });
+      if (!recoveredMessage) {
+        return failAction(null, false, 'Message not found !');
+      }
+
+      if (recoveredMessage) {
+        const deletedMessage = await this.prisma.message.delete({
           where: { id: id },
-        }),
-        true,
-        'Message removed successfull !',
-      );
+        });
+
+        if (deletedMessage) {
+          return successAction(
+            deletedMessage,
+            true,
+            'Message removed successfull !',
+          );
+        } else {
+          return failAction(null, false, 'Error during delete message !');
+        }
+      }
     } catch (e) {
       console.error(e);
       return failAction(null, false, `Error during action: ${e}`);

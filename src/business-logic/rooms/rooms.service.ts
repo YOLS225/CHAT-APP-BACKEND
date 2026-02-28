@@ -136,6 +136,7 @@ export class RoomsService {
             select: {
               id: true,
               userName: true,
+              avatar: true,
             },
           },
         },

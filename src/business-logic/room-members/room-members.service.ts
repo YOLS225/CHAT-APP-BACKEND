@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { CreateRoomMemberDto } from './dto/create-room-member.dto';
-// import { UpdateRoomMemberDto } from './dto/update-room-member.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { failAction, successAction } from '../../utils/action.dto';
+import { UpdateMemberRoleDto } from './dto/update-room-member.dto';
+import { RoomRole } from '../../utils/types';
 
 @Injectable()
 export class RoomMembersService {
@@ -28,6 +29,7 @@ export class RoomMembersService {
         data: {
           userId: createRoomMemberDto.userId,
           roomId: createRoomMemberDto.roomId,
+          role: createRoomMemberDto.role as RoomRole,
         },
         select: {
           id: true,
@@ -85,9 +87,34 @@ export class RoomMembersService {
     }
   }
 
-  // update(id: string, updateRoomMemberDto: UpdateRoomMemberDto) {
-  //   return `This action updates a #${id} roomMember`;
-  // }
+  async updateMemberRole(memberId: string, dto: UpdateMemberRoleDto) {
+    try {
+      const updated = await this.prisma.roomMember.update({
+        where: { id: memberId },
+        data: { role: dto.role },
+        select: { id: true, userId: true, roomId: true, role: true },
+      });
+      return successAction(updated, true, 'Rôle mis à jour avec succès');
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
+    }
+  }
+
+  async kickMember(memberId: string) {
+    try {
+      const target = await this.prisma.roomMember.findFirst({
+        where: { id: memberId },
+      });
+      if (!target) return failAction(null, false, 'Membre introuvable');
+
+      await this.prisma.roomMember.delete({ where: { id: memberId } });
+      return successAction(null, true, 'Membre exclu avec succès');
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
+    }
+  }
 
   async leaveRoom(id: string) {
     try {

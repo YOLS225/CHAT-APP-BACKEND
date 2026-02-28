@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { RoomMembersService } from '../../business-logic/room-members/room-members.service';
 import { CreateRoomMemberDto } from '../../business-logic/room-members/dto/create-room-member.dto';
-// import { UpdateRoomMemberDto } from '../../business-logic/room-members/dto/update-room-member.dto';
+import { UpdateMemberRoleDto } from '../../business-logic/room-members/dto/update-room-member.dto';
 import { JwtAuthGuard } from '../../guard/jwt.guard';
 import { ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 
@@ -43,16 +43,24 @@ export class RoomMembersController {
     return this.roomMembersService.findById(id);
   }
 
-  // @Patch(':id')
-  // @UseGuards(JwtAuthGuard)
-  // @ApiBearerAuth()
-  // @ApiOperation({ summary: 'Edit a Member' })
-  // update(
-  //   @Param('id') id: string,
-  //   @Body() updateRoomMemberDto: UpdateRoomMemberDto,
-  // ) {
-  //   return this.roomMembersService.update(id, updateRoomMemberDto);
-  // }
+  @Patch(':memberId/role')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update member role (OWNER/ADMIN only)' })
+  updateRole(
+    @Param('memberId') memberId: string,
+    @Body() dto: UpdateMemberRoleDto,
+  ) {
+    return this.roomMembersService.updateMemberRole(memberId, dto);
+  }
+
+  @Delete(':memberId/kick')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Kick a member (OWNER/ADMIN only)' })
+  kick(@Param('memberId') memberId: string) {
+    return this.roomMembersService.kickMember(memberId);
+  }
 
   @Patch('leave/:id')
   @UseGuards(JwtAuthGuard)

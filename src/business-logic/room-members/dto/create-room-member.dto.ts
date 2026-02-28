@@ -3,8 +3,8 @@ import { RoomRole } from '../../../utils/types';
 
 export class CreateRoomMemberDto {
   id?: string;
-  @ApiProperty({ enum: RoomRole, example: RoomRole.MEMBER })
-  role?: string;
+  @ApiProperty({ enum: RoomRole, example: RoomRole.MEMBER, required: false })
+  role?: RoomRole;
   @ApiProperty({ example: true })
   isActive?: boolean;
   @ApiProperty({ example: 'string' })

@@ -11,6 +11,10 @@ import {
 } from '@nestjs/common';
 import { UsersService } from '../../business-logic/users/users.service';
 import { CreateUserDto } from '../../business-logic/users/dto/create-user.dto';
+import {
+  UpdateUserDto,
+  UpdatePasswordDto,
+} from '../../business-logic/users/dto/update-user.dto';
 import { ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../guard/jwt.guard';
 
@@ -47,9 +51,20 @@ export class UsersController {
   @Patch(':id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Edit an User' })
-  update(@Param('id') id: string, @Body() updateUserDto: CreateUserDto) {
+  @ApiOperation({ summary: 'Update username, email or avatar' })
+  update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
     return this.usersService.updateUser(id, updateUserDto);
+  }
+
+  @Patch(':id/password')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update password' })
+  updatePassword(
+    @Param('id') id: string,
+    @Body() updatePasswordDto: UpdatePasswordDto,
+  ) {
+    return this.usersService.updatePassword(id, updatePasswordDto);
   }
 
   @Delete(':id')

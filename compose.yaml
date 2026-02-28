@@ -16,5 +16,19 @@ services:
       # - ./sql/create_tables_v3.sql:/docker-entrypoint-initdb.d/create_tables.sql
     restart: unless-stopped
 
+  minio:
+    image: minio/minio
+    ports:
+      - '9001:9000'   # API
+      - '9002:9001'   # Console
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+
 volumes:
   chat-backend_postgres_data:
+  minio_data:

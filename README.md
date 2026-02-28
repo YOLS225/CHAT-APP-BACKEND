@@ -4,7 +4,7 @@ Backend d'application de chat en temps réel développé avec NestJS, TypeScript
 
 ## Description
 
-Application backend permettant la gestion d'utilisateurs, de salles de discussion (rooms), de messages et de membres de salles avec un système d'authentification JWT et de rôles.
+Application backend permettant la gestion d'utilisateurs, de salles de discussion (rooms), de messages, de membres de salles avec un système d'authentification JWT, de rôles et de statistiques utilisateur.
 
 ## Architecture
 
@@ -17,17 +17,18 @@ src/
 │   ├── messages/           # Endpoints de gestion des messages
 │   ├── rooms/              # Endpoints de gestion des salles
 │   ├── room-members/       # Endpoints de gestion des membres
+│   ├── statistics/         # Endpoints de statistiques
 │   └── users/              # Endpoints de gestion des utilisateurs
 ├── business-logic/          # Couche métier (Services)
 │   ├── auth/               # Logique d'authentification
 │   ├── messages/           # Logique métier des messages
 │   ├── rooms/              # Logique métier des salles
 │   ├── room-members/       # Logique métier des membres
+│   ├── statistics/         # Logique métier des statistiques
 │   └── users/              # Logique métier des utilisateurs
 ├── guard/                   # Sécurité (JWT Guards & Strategies)
 ├── prisma/                  # Couche d'accès aux données
-├── utils/                   # Utilitaires
-└── config/                  # Configuration
+└── utils/                   # Utilitaires
 ```
 
 ### Principes architecturaux
@@ -45,71 +46,45 @@ src/
 - **Express** - Serveur HTTP
 
 ### Base de données & ORM
-- **PostgreSQL 16.2** - Base de données relationnelle
-- **Prisma 6.15** - ORM moderne avec génération de types TypeScript
+- **PostgreSQL** - Base de données relationnelle
+- **Prisma** - ORM moderne avec génération de types TypeScript
 - Migrations gérées par Prisma
 
 ### Authentification & Sécurité
-- **JWT (jsonwebtoken)** - Authentification par tokens
-- **bcrypt 6.0** - Hachage sécurisé des mots de passe
-- Guards et Strategies personnalisés pour NestJS
+- **JWT (jsonwebtoken)** - Access token (25min) + Refresh token (7j)
+- **bcrypt** - Hachage sécurisé des mots de passe
+- Guards personnalisés pour NestJS
 
 ### Validation & Documentation
 - **class-validator** & **class-transformer** - Validation des DTOs
 - **Swagger (@nestjs/swagger)** - Documentation API interactive
 
 ### Outils de développement
-- **Jest** - Framework de tests (unitaires et e2e)
+- **Jest** - Framework de tests
 - **ESLint** & **Prettier** - Linting et formatage de code
 - **Docker Compose** - Orchestration des services
-- **ts-node** & **ts-jest** - Exécution TypeScript
 
 ## Modèle de données
 
 ### Entités principales
 
-**User** - Utilisateurs de l'application
-- `id` (UUID)
-- `userName` (unique)
-- `email` (unique)
-- `password` (hashé)
-- `avatar` (optionnel)
-- `isOnline` (boolean)
-- `lastSeen` (timestamp)
-- `status` (ACTIVE, INACTIVE, BANNED, SUSPENDED)
+**User**
+- `id` (UUID), `userName` (unique), `email` (unique), `password` (hashé)
+- `avatar` (optionnel), `isOnline`, `lastSeen`
+- `status` : `ACTIVE` | `INACTIVE` | `BANNED` | `SUSPENDED`
 
-**Room** - Salles de discussion
-- `id` (UUID)
-- `name`
-- `description` (optionnel)
-- `isPrivate` (boolean)
-- `isDirectMessage` (boolean)
-- `maxMembers` (défaut: 100)
-- `isActive` (boolean)
+**Room**
+- `id` (UUID), `name`, `description` (optionnel)
+- `isPrivate`, `isDirectMessage`, `maxMembers` (défaut: 100), `isActive`
 
-**Message** - Messages envoyés dans les salles
-- `id` (UUID)
-- `content`
-- `type` (TEXT, IMAGE, FILE, SYSTEM)
-- `senderId` (référence User)
-- `roomId` (référence Room)
-- `editedAt` (optionnel)
-- `isDeleted` (boolean)
+**Message**
+- `id` (UUID), `content`, `type` : `TEXT` | `IMAGE` | `FILE` | `SYSTEM`
+- `senderId`, `roomId`, `editedAt` (optionnel), `isDeleted`
 
-**RoomMember** - Membres d'une salle
-- `id` (UUID)
-- `userId` (référence User)
-- `roomId` (référence Room)
-- `role` (OWNER, ADMIN, MODERATOR, MEMBER)
-- `joinedAt` (timestamp)
-- `isActive` (boolean)
-
-### Relations
-
-- Un utilisateur peut envoyer plusieurs messages
-- Un utilisateur peut être membre de plusieurs rooms
-- Une room contient plusieurs messages et membres
-- Relations avec suppression en cascade (onDelete: Cascade)
+**RoomMember**
+- `id` (UUID), `userId`, `roomId`
+- `role` : `OWNER` | `ADMIN` | `MODERATOR` | `MEMBER`
+- `joinedAt`, `isActive`
 
 ## Installation
 
@@ -119,7 +94,6 @@ npm install
 
 # Configurer les variables d'environnement
 cp .env.example .env
-# Éditer .env avec vos configurations
 
 # Démarrer la base de données PostgreSQL
 docker-compose up -d
@@ -133,166 +107,123 @@ npm run db:migrate
 
 ## Configuration
 
-Créer un fichier `.env` à la racine avec les variables suivantes:
+Créer un fichier `.env` à la racine :
 
 ```env
-# Database
 DATABASE_URL="postgresql://postgres:postgres@localhost:5469/postgres"
-
-# Server
-PORT=3001
+PORT=9000
 FRONTEND_URL="http://localhost:3000"
 
-# JWT - Access Token (courte durée - 15 minutes)
-JWT_SECRET="your-secret-key-change-this-in-production"
-JWT_ACCESS_EXPIRES_IN="15m"
-
-# JWT - Refresh Token (longue durée - 7 jours)
-JWT_REFRESH_SECRET="your-refresh-secret-key-change-this-in-production"
+JWT_SECRET="your-secret-key"
+JWT_EXPIRES_IN="25min"
+JWT_REFRESH_SECRET="your-refresh-secret-key"
 JWT_REFRESH_EXPIRES_IN="7d"
 ```
 
-Vous pouvez copier le fichier `.env.example` et le renommer en `.env` pour démarrer rapidement.
-
 ## Scripts disponibles
 
-### Développement
-
 ```bash
-# Démarrer en mode développement
+# Développement
 npm run start:dev
 
-# Démarrer avec debug
-npm run start:debug
-```
+# Production
+npm run build && npm run start:prod
 
-### Production
+# Base de données
+npm run db:generate    # Générer le client Prisma
+npm run db:migrate     # Créer/appliquer les migrations
+npm run db:studio      # Interface graphique Prisma Studio
 
-```bash
-# Build du projet
-npm run build
-
-# Démarrer en production
-npm run start:prod
-```
-
-### Base de données
-
-```bash
-# Générer le client Prisma
-npm run db:generate
-
-# Créer une migration
-npm run db:migrate
-
-# Réinitialiser la base de données
-npm run db:reset
-
-# Voir le statut des migrations
-npm run db:status
-
-# Ouvrir Prisma Studio (interface graphique)
-npm run db:studio
-```
-
-### Tests
-
-```bash
-# Tests unitaires
+# Tests & qualité
 npm run test
-
-# Tests en mode watch
-npm run test:watch
-
-# Tests e2e
-npm run test:e2e
-
-# Couverture de code
-npm run test:cov
-```
-
-### Code Quality
-
-```bash
-# Linter
 npm run lint
-
-# Formatter
 npm run format
 ```
 
-## Fonctionnalités
+## API Endpoints
 
-- Authentification JWT avec guards
-- Gestion complète des utilisateurs (CRUD, statut en ligne)
-- Système de salles publiques et privées
-- Messages directs (DM) entre utilisateurs
-- Messages avec support texte, images et fichiers
-- Système de rôles granulaire (propriétaire, admin, modérateur, membre)
-- Gestion des statuts utilisateurs (actif, inactif, banni, suspendu)
-- Soft delete pour les messages
-- Documentation API interactive via Swagger
-- CORS configuré pour intégration frontend
+### Auth
+| Méthode | Route | Description |
+|---|---|---|
+| POST | `/auth/login` | Connexion (retourne access + refresh token) |
+| POST | `/auth/refresh` | Renouveler l'access token |
+| POST | `/auth/logout/:id` | Déconnexion |
 
-## Documentation API
+### Users
+| Méthode | Route | Description |
+|---|---|---|
+| POST | `/users` | Créer un utilisateur |
+| GET | `/users?page&page_size&search` | Lister les utilisateurs |
+| GET | `/users/:id` | Récupérer un utilisateur |
+| PATCH | `/users/:id` | Modifier `userName`, `email`, `avatar` |
+| PATCH | `/users/:id/password` | Modifier le mot de passe |
+| DELETE | `/users/:id` | Désactiver (soft delete) |
+| DELETE | `/users/force/:id` | Supprimer définitivement |
 
-Une fois l'application démarrée, la documentation Swagger est accessible à:
+### Rooms
+| Méthode | Route | Description |
+|---|---|---|
+| POST | `/rooms` | Créer une room |
+| GET | `/rooms?page&page_size&search&isDirectMessage` | Lister les rooms |
+| GET | `/rooms/:id` | Récupérer une room |
+| GET | `/rooms/members/:id` | Membres d'une room |
+| GET | `/rooms/user-rooms/:id?isDirectMessage&search` | Rooms d'un utilisateur |
+| PATCH | `/rooms/:id` | Modifier une room |
+| DELETE | `/rooms/:id` | Supprimer une room |
+
+### Messages
+| Méthode | Route | Description |
+|---|---|---|
+| POST | `/messages` | Envoyer un message |
+| GET | `/messages/:id` | Récupérer un message |
+| GET | `/messages/room/:id?search` | Messages d'une room |
+| PATCH | `/messages/:id` | Modifier un message |
+| DELETE | `/messages/:id` | Supprimer un message |
+
+### Room Members
+| Méthode | Route | Description |
+|---|---|---|
+| POST | `/room-members` | Rejoindre une room (avec `role` optionnel) |
+| GET | `/room-members?page&page_size` | Lister les membres |
+| GET | `/room-members/:id` | Récupérer un membre |
+| PATCH | `/room-members/:memberId/role` | Modifier le rôle d'un membre |
+| PATCH | `/room-members/leave/:id` | Quitter une room |
+| DELETE | `/room-members/:memberId/kick` | Exclure un membre |
+| DELETE | `/room-members/:id` | Supprimer un membre |
+
+### Statistics
+| Méthode | Route | Description |
+|---|---|---|
+| GET | `/statistics/user/:userId/messages-by-day?days` | Messages par jour |
+| GET | `/statistics/user/:userId/average-response-time?days` | Temps de réponse moyen |
+| GET | `/statistics/user/:userId/top-conversations?limit` | Top conversations |
+| GET | `/statistics/user/:userId/active-conversations?days` | Conversations actives |
+| GET | `/statistics/user/:userId/recent-activities?limit` | Activités récentes |
+| GET | `/statistics/user/:userId/overview?days&limit` | Vue d'ensemble complète |
+
+> Tous les endpoints sauf `POST /users`, `POST /auth/login` et `POST /auth/refresh` nécessitent un header `Authorization: Bearer <token>`.
+
+## Authentification
+
+Flux standard :
+
+1. **Login** → `POST /auth/login` → reçoit `token` + `refreshToken`
+2. **Requêtes** → header `Authorization: Bearer {token}`
+3. **Token expiré** → `POST /auth/refresh` avec le `refreshToken`
+4. **Logout** → `POST /auth/logout/:id`
+
+## Documentation API interactive
 
 ```
-http://localhost:3001/api
+http://localhost:9000/api
 ```
-
-## Architecture de sécurité
-
-### Authentification JWT avec Refresh Token
-
-L'application utilise un système d'authentification à deux tokens pour une sécurité renforcée:
-
-**Access Token (courte durée - 15 minutes)**
-- Utilisé pour authentifier chaque requête API
-- Contient les informations utilisateur (id, email, userName)
-- Expire rapidement pour limiter les risques en cas de vol
-
-**Refresh Token (longue durée - 7 jours)**
-- Utilisé uniquement pour obtenir un nouveau access token
-- Contient uniquement l'ID utilisateur
-- N'est pas stocké en base de données (stateless)
-- Doit être conservé de manière sécurisée côté client
-
-**Flux d'authentification:**
-
-1. **Login** (`POST /auth/login`)
-   - Envoyer email et password
-   - Recevoir accessToken et refreshToken
-   - Stocker les deux tokens côté client (localStorage, sessionStorage, ou cookies HTTP-only)
-
-2. **Requêtes API authentifiées**
-   - Ajouter le header: `Authorization: Bearer {accessToken}`
-   - Si le token est expiré (401), utiliser le refresh token
-
-3. **Rafraîchir le token** (`POST /auth/refresh`)
-   - Envoyer le refreshToken dans le body
-   - Recevoir un nouveau accessToken
-   - Mettre à jour l'accessToken stocké
-
-4. **Logout** (`POST /auth/logout/:id`)
-   - Supprimer les tokens côté client
-   - Mettre l'utilisateur hors ligne côté serveur
-
-**Autres mesures de sécurité:**
-- Hachage des mots de passe avec bcrypt
-- Guards NestJS pour protéger les routes
-- Validation des données avec class-validator
-- CORS configuré pour autoriser uniquement les origines de confiance
-- Vérification du statut utilisateur (ACTIVE) à chaque authentification
 
 ## Base de données
 
-PostgreSQL est exécuté dans un conteneur Docker:
-- Port: 5469
-- User: postgres
-- Password: postgres
-- Database: postgres
+PostgreSQL via Docker :
+- Port : `5469`
+- User : `postgres` / Password : `postgres`
+- Database : `postgres`
 
 Les données sont persistées dans un volume Docker `chat-backend_postgres_data`.
 

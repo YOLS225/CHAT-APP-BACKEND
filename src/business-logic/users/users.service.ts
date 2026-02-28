@@ -3,8 +3,8 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { failAction, successAction } from '../../utils/action.dto';
 import { UserStatus } from '../../utils/types';
-import { hash } from 'bcrypt';
-import { UpdateUserDto } from './dto/update-user.dto';
+import { hash, compare } from 'bcrypt';
+import { UpdateUserDto, UpdatePasswordDto } from './dto/update-user.dto';
 
 @Injectable()
 export class UsersService {
@@ -137,28 +137,54 @@ export class UsersService {
   async updateUser(id: string, updateUserDto: UpdateUserDto) {
     try {
       const recoveredUser = await this.findById(id);
-      if (recoveredUser) {
-        const userUpdated = await this.prisma.user.update({
-          where: {
-            id: id,
-          },
-          data: {
-            userName: updateUserDto.userName,
-            avatar: updateUserDto.avatar,
-            email: updateUserDto.email,
-            status: updateUserDto.status,
-          },
-        });
-        if (userUpdated) {
-          return successAction(userUpdated, true, 'User:updated successfuly !');
-        } else {
-          return failAction(
-            null,
-            false,
-            "Erreur lors de la mise à jour de l'utilisateur",
-          );
-        }
+      if (!recoveredUser) {
+        return failAction(null, false, 'User:not found !');
       }
+      const userUpdated = await this.prisma.user.update({
+        where: { id },
+        data: {
+          userName: updateUserDto.userName,
+          email: updateUserDto.email,
+          avatar: updateUserDto.avatar,
+        },
+        select: {
+          id: true,
+          userName: true,
+          email: true,
+          avatar: true,
+          isOnline: true,
+          status: true,
+        },
+      });
+      return successAction(userUpdated, true, 'User:updated successfuly !');
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
+    }
+  }
+
+  async updatePassword(id: string, updatePasswordDto: UpdatePasswordDto) {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id },
+        select: { id: true, password: true },
+      });
+      if (!user) {
+        return failAction(null, false, 'User:not found !');
+      }
+      const isMatch = await compare(
+        updatePasswordDto.currentPassword,
+        user.password,
+      );
+      if (!isMatch) {
+        return failAction(null, false, 'Mot de passe actuel incorrect');
+      }
+      const hashedPassword = await hash(updatePasswordDto.newPassword, 10);
+      await this.prisma.user.update({
+        where: { id },
+        data: { password: hashedPassword },
+      });
+      return successAction(null, true, 'Mot de passe mis à jour avec succès');
     } catch (e) {
       console.error(e);
       return failAction(null, false, `Error during action: ${e}`);
