@@ -6,6 +6,12 @@ Backend d'application de chat en temps réel développé avec NestJS, TypeScript
 
 Application backend permettant la gestion d'utilisateurs, de salles de discussion (rooms), de messages, de membres de salles avec un système d'authentification JWT, de rôles et de statistiques utilisateur.
 
+## Prérequis
+
+- **Node.js** >= 20.x
+- **npm** >= 10.x
+- **Docker** & **Docker Compose**
+
 ## Architecture
 
 ### Structure du projet
@@ -18,6 +24,7 @@ src/
 │   ├── rooms/              # Endpoints de gestion des salles
 │   ├── room-members/       # Endpoints de gestion des membres
 │   ├── statistics/         # Endpoints de statistiques
+│   ├── storage/            # Endpoints d'upload de fichiers (MinIO)
 │   └── users/              # Endpoints de gestion des utilisateurs
 ├── business-logic/          # Couche métier (Services)
 │   ├── auth/               # Logique d'authentification
@@ -25,6 +32,7 @@ src/
 │   ├── rooms/              # Logique métier des salles
 │   ├── room-members/       # Logique métier des membres
 │   ├── statistics/         # Logique métier des statistiques
+│   ├── storage/            # Logique d'upload (MinIO)
 │   └── users/              # Logique métier des utilisateurs
 ├── guard/                   # Sécurité (JWT Guards & Strategies)
 ├── prisma/                  # Couche d'accès aux données
@@ -49,6 +57,9 @@ src/
 - **PostgreSQL** - Base de données relationnelle
 - **Prisma** - ORM moderne avec génération de types TypeScript
 - Migrations gérées par Prisma
+
+### Stockage de fichiers
+- **MinIO** - Stockage objet compatible S3 (avatars, fichiers)
 
 ### Authentification & Sécurité
 - **JWT (jsonwebtoken)** - Access token (25min) + Refresh token (7j)
@@ -95,8 +106,8 @@ npm install
 # Configurer les variables d'environnement
 cp .env.example .env
 
-# Démarrer la base de données PostgreSQL
-docker-compose up -d
+# Démarrer PostgreSQL et MinIO via Docker
+docker compose up -d
 
 # Générer le client Prisma
 npm run db:generate
@@ -110,15 +121,32 @@ npm run db:migrate
 Créer un fichier `.env` à la racine :
 
 ```env
-DATABASE_URL="postgresql://postgres:postgres@localhost:5469/postgres"
+DATABASE_URL="postgresql://postgres:postgres@localhost:5469/postgres?schema=public"
 PORT=9000
-FRONTEND_URL="http://localhost:3000"
 
 JWT_SECRET="your-secret-key"
 JWT_EXPIRES_IN="25min"
 JWT_REFRESH_SECRET="your-refresh-secret-key"
 JWT_REFRESH_EXPIRES_IN="7d"
+
+MINIO_ENDPOINT=localhost
+MINIO_PORT=9001
+MINIO_USE_SSL=false
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+MINIO_BUCKET=chat-app
 ```
+
+## Services Docker
+
+Le fichier `compose.yaml` démarre deux services :
+
+| Service    | Description                          | Port(s)              |
+|------------|--------------------------------------|----------------------|
+| `postgres` | Base de données PostgreSQL 16.2      | `5469` → `5432`      |
+| `minio`    | Stockage objet S3-compatible         | `9001` (API), `9002` (Console) |
+
+Les données sont persistées dans les volumes Docker `chat-backend_postgres_data` et `minio_data`.
 
 ## Scripts disponibles
 
@@ -132,15 +160,24 @@ npm run build && npm run start:prod
 # Base de données
 npm run db:generate    # Générer le client Prisma
 npm run db:migrate     # Créer/appliquer les migrations
+npm run db:reset       # Réinitialiser la base de données
+npm run db:status      # Vérifier le statut des migrations
 npm run db:studio      # Interface graphique Prisma Studio
 
-# Tests & qualité
-npm run test
+# Tests
+npm run test           # Lancer les tests unitaires
+npm run test:watch     # Mode watch
+npm run test:cov       # Avec rapport de couverture
+npm run test:e2e       # Tests end-to-end
+
+# Qualité
 npm run lint
 npm run format
 ```
 
 ## API Endpoints
+
+> Tous les endpoints sauf `POST /users`, `POST /auth/login` et `POST /auth/refresh` nécessitent un header `Authorization: Bearer <token>`.
 
 ### Auth
 | Méthode | Route | Description |
@@ -152,7 +189,7 @@ npm run format
 ### Users
 | Méthode | Route | Description |
 |---|---|---|
-| POST | `/users` | Créer un utilisateur |
+| POST | `/users` | Créer un compte utilisateur |
 | GET | `/users?page&page_size&search` | Lister les utilisateurs |
 | GET | `/users/:id` | Récupérer un utilisateur |
 | PATCH | `/users/:id` | Modifier `userName`, `email`, `avatar` |
@@ -191,6 +228,11 @@ npm run format
 | DELETE | `/room-members/:memberId/kick` | Exclure un membre |
 | DELETE | `/room-members/:id` | Supprimer un membre |
 
+### Storage
+| Méthode | Route | Description |
+|---|---|---|
+| POST | `/storage/upload/avatar/:userId` | Upload d'avatar (multipart/form-data) |
+
 ### Statistics
 | Méthode | Route | Description |
 |---|---|---|
@@ -201,31 +243,21 @@ npm run format
 | GET | `/statistics/user/:userId/recent-activities?limit` | Activités récentes |
 | GET | `/statistics/user/:userId/overview?days&limit` | Vue d'ensemble complète |
 
-> Tous les endpoints sauf `POST /users`, `POST /auth/login` et `POST /auth/refresh` nécessitent un header `Authorization: Bearer <token>`.
-
 ## Authentification
 
 Flux standard :
 
-1. **Login** → `POST /auth/login` → reçoit `token` + `refreshToken`
-2. **Requêtes** → header `Authorization: Bearer {token}`
-3. **Token expiré** → `POST /auth/refresh` avec le `refreshToken`
-4. **Logout** → `POST /auth/logout/:id`
+1. **Créer un compte** → `POST /users`
+2. **Login** → `POST /auth/login` → reçoit `token` + `refreshToken`
+3. **Requêtes** → header `Authorization: Bearer {token}`
+4. **Token expiré** → `POST /auth/refresh` avec le `refreshToken`
+5. **Logout** → `POST /auth/logout/:id`
 
 ## Documentation API interactive
 
 ```
 http://localhost:9000/api
 ```
-
-## Base de données
-
-PostgreSQL via Docker :
-- Port : `5469`
-- User : `postgres` / Password : `postgres`
-- Database : `postgres`
-
-Les données sont persistées dans un volume Docker `chat-backend_postgres_data`.
 
 ## License
 
