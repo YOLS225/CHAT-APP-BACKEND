@@ -2,6 +2,23 @@
 
 services:
 
+  app:
+    build: .
+    ports:
+      - '9000:9000'
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/postgres?schema=public"
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    restart: unless-stopped
+
   postgres:
     image: 'postgres:16.2'
     environment:
@@ -14,6 +31,11 @@ services:
       - chat-backend_postgres_data:/var/lib/postgresql/data
       # copy the sql script to create tables
       # - ./sql/create_tables_v3.sql:/docker-entrypoint-initdb.d/create_tables.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   minio:

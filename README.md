@@ -99,6 +99,20 @@ src/
 
 ## Installation
 
+### Avec Docker (recommandé)
+
+```bash
+# Configurer les variables d'environnement
+cp .env.example .env
+
+# Build et démarrage de tous les services (app + postgres + minio)
+make build
+```
+
+Les migrations sont appliquées automatiquement au démarrage du container.
+
+### En local (développement)
+
 ```bash
 # Installer les dépendances
 npm install
@@ -106,14 +120,15 @@ npm install
 # Configurer les variables d'environnement
 cp .env.example .env
 
-# Démarrer PostgreSQL et MinIO via Docker
-docker compose up -d
+# Démarrer PostgreSQL et MinIO
+make up
 
-# Générer le client Prisma
+# Générer le client Prisma et appliquer les migrations
 npm run db:generate
-
-# Exécuter les migrations
 npm run db:migrate
+
+# Lancer le serveur en mode watch
+npm run start:dev
 ```
 
 ## Configuration
@@ -139,12 +154,22 @@ MINIO_BUCKET=chat-app
 
 ## Services Docker
 
-Le fichier `compose.yaml` démarre deux services :
+Le fichier `compose.yaml` démarre trois services :
 
-| Service    | Description                          | Port(s)              |
-|------------|--------------------------------------|----------------------|
-| `postgres` | Base de données PostgreSQL 16.2      | `5469` → `5432`      |
+| Service    | Description                          | Port(s)                        |
+|------------|--------------------------------------|--------------------------------|
+| `app`      | API NestJS                           | `9000`                         |
+| `postgres` | Base de données PostgreSQL 16.2      | `5469` → `5432`                |
 | `minio`    | Stockage objet S3-compatible         | `9001` (API), `9002` (Console) |
+
+### Commandes Make
+
+```bash
+make build   # Build l'image et démarre tous les services
+make up      # Démarre les services sans rebuild
+make down    # Arrête et supprime les containers + volumes
+make reset   # Repart de zéro (down + build)
+```
 
 Les données sont persistées dans les volumes Docker `chat-backend_postgres_data` et `minio_data`.
 
