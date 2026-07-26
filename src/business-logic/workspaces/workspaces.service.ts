@@ -266,7 +266,21 @@ export class WorkspacesService {
         orderBy: { joinedAt: 'asc' },
       });
 
-      return successAction(members, true, 'Workspace users found');
+      return successAction(
+        members.map((member) => ({
+          id: member.user.id,
+          userName: member.user.userName,
+          email: member.user.email,
+          avatar: member.user.avatar,
+          isOnline: member.user.isOnline,
+          lastSeen: member.user.lastSeen,
+          role: member.role,
+          memberId: member.id,
+          membershipStatus: member.status,
+        })),
+        true,
+        'Workspace users found',
+      );
     } catch (e) {
       console.error(e);
       return failAction(null, false, `Error during action: ${e}`);
@@ -478,7 +492,17 @@ export class WorkspacesService {
         },
         include: {
           members: {
-            select: { userId: true },
+            select: {
+              userId: true,
+              user: {
+                select: {
+                  id: true,
+                  userName: true,
+                  avatar: true,
+                  isOnline: true,
+                },
+              },
+            },
           },
         },
       });
@@ -489,7 +513,24 @@ export class WorkspacesService {
         existingDm.members.some((member) => member.userId === actorUserId) &&
         existingDm.members.some((member) => member.userId === targetUserId)
       ) {
-        return successAction(existingDm, true, 'Direct message already exists');
+        const otherMember = existingDm.members.find(
+          (member) => member.userId !== actorUserId,
+        );
+        return successAction(
+          {
+            id: existingDm.id,
+            name: existingDm.name,
+            displayName: otherMember?.user.userName || existingDm.name,
+            description: existingDm.description,
+            isPrivate: existingDm.isPrivate,
+            isDirectMessage: existingDm.isDirectMessage,
+            createdAt: existingDm.createdAt,
+            otherUser: otherMember?.user || null,
+            lastMessage: null,
+          },
+          true,
+          'Direct message already exists',
+        );
       }
 
       const room = await this.prisma.$transaction(async (tx) => {
@@ -517,10 +558,47 @@ export class WorkspacesService {
           ],
         });
 
-        return created;
+        return tx.room.findUnique({
+          where: { id: created.id },
+          include: {
+            members: {
+              select: {
+                userId: true,
+                user: {
+                  select: {
+                    id: true,
+                    userName: true,
+                    avatar: true,
+                    isOnline: true,
+                  },
+                },
+              },
+            },
+          },
+        });
       });
 
-      return successAction(room, true, 'Direct message created successfully');
+      const otherMember = room?.members.find(
+        (member) => member.userId !== actorUserId,
+      );
+
+      return successAction(
+        room
+          ? {
+              id: room.id,
+              name: room.name,
+              displayName: otherMember?.user.userName || room.name,
+              description: room.description,
+              isPrivate: room.isPrivate,
+              isDirectMessage: room.isDirectMessage,
+              createdAt: room.createdAt,
+              otherUser: otherMember?.user || null,
+              lastMessage: null,
+            }
+          : null,
+        true,
+        'Direct message created successfully',
+      );
     } catch (e) {
       console.error(e);
       return failAction(null, false, `Error during action: ${e}`);

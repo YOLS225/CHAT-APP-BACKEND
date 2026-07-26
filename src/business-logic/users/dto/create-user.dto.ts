@@ -6,10 +6,11 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  IsUrl,
 } from 'class-validator';
 
 export class CreateUserDto {
+  @IsOptional()
+  @IsString()
   id?: string;
   @ApiProperty({ example: 'string' })
   @IsString()
@@ -25,12 +26,12 @@ export class CreateUserDto {
   @ApiProperty({ example: 'string' })
   @IsOptional()
   @IsString()
-  @IsUrl({ require_tld: false })
   avatar?: string;
   @ApiProperty({ example: true })
   @IsOptional()
   @IsBoolean()
   isOnline?: boolean;
+  @IsOptional()
   createdAt?: Date;
   // @ApiProperty({ type: () => [Message] })
   // sentMessages: Message[];

@@ -145,27 +145,22 @@ export class RoomsService {
         }),
       };
 
-      const [content, total] = await Promise.all([
-        this.prisma.room.findMany({
-          skip,
-          take: page_size,
-          where,
-          select: {
-            id: true,
-            name: true,
-            description: true,
-            isDirectMessage: true,
-          },
-          orderBy: { createdAt: 'asc' as const },
-        }),
-        this.prisma.room.count({ where }),
-      ]);
+      const content = await this.prisma.room.findMany({
+        skip,
+        take: page_size,
+        where,
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          isPrivate: true,
+          isDirectMessage: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'asc' as const },
+      });
 
-      return successAction(
-        { content, total, page, page_size },
-        true,
-        'Room: find successfully!',
-      );
+      return successAction(content, true, 'Room: find successfully!');
     } catch (e) {
       console.error(e);
       return failAction(null, false, `Error during action: ${e}`);
