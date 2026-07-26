@@ -1,4 +1,13 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  ForbiddenException,
+  Get,
+  Param,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import type { Request } from 'express';
 import { StatisticsService } from '../../business-logic/statistics/statistics.service';
 import { GetStatisticsDto } from '../../business-logic/statistics/dto/get-statistics.dto';
 import { JwtAuthGuard } from '../../guard/jwt.guard';
@@ -7,6 +16,13 @@ import { ApiBearerAuth } from '@nestjs/swagger';
 @Controller('statistics')
 export class StatisticsController {
   constructor(private readonly statisticsService: StatisticsService) {}
+
+  private assertSelf(userId: string, request: Request) {
+    const authenticatedUserId = (request.user as { sub?: string })?.sub;
+    if (authenticatedUserId !== userId) {
+      throw new ForbiddenException('You can only access your own statistics');
+    }
+  }
 
   /**
    * GET /statistics/user/:userId/messages-by-day
@@ -18,7 +34,9 @@ export class StatisticsController {
   async getMessagesByDay(
     @Param('userId') userId: string,
     @Query() query: GetStatisticsDto,
+    @Req() request: Request,
   ) {
+    this.assertSelf(userId, request);
     return this.statisticsService.getMessageCountByDay(userId, query.days);
   }
 
@@ -32,7 +50,9 @@ export class StatisticsController {
   async getAverageResponseTime(
     @Param('userId') userId: string,
     @Query() query: GetStatisticsDto,
+    @Req() request: Request,
   ) {
+    this.assertSelf(userId, request);
     return this.statisticsService.getAverageResponseTime(userId, query.days);
   }
 
@@ -46,7 +66,9 @@ export class StatisticsController {
   async getTopConversations(
     @Param('userId') userId: string,
     @Query() query: GetStatisticsDto,
+    @Req() request: Request,
   ) {
+    this.assertSelf(userId, request);
     return this.statisticsService.getTopConversations(userId, query.limit);
   }
 
@@ -60,7 +82,9 @@ export class StatisticsController {
   async getActiveConversations(
     @Param('userId') userId: string,
     @Query() query: GetStatisticsDto,
+    @Req() request: Request,
   ) {
+    this.assertSelf(userId, request);
     return this.statisticsService.getActiveConversations(userId, query.days);
   }
 
@@ -74,7 +98,9 @@ export class StatisticsController {
   async getRecentActivities(
     @Param('userId') userId: string,
     @Query() query: GetStatisticsDto,
+    @Req() request: Request,
   ) {
+    this.assertSelf(userId, request);
     return this.statisticsService.getRecentActivities(userId, query.limit);
   }
 
@@ -88,7 +114,9 @@ export class StatisticsController {
   async getOverview(
     @Param('userId') userId: string,
     @Query() query: GetStatisticsDto,
+    @Req() request: Request,
   ) {
+    this.assertSelf(userId, request);
     return this.statisticsService.getUserStatisticsOverview(
       userId,
       query.days,

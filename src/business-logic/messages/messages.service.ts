@@ -8,14 +8,35 @@ import { failAction, successAction } from '../../utils/action.dto';
 export class MessagesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(createMessageDto: CreateMessageDto) {
+  private async isActiveRoomMember(roomId: string, userId: string) {
+    const member = await this.prisma.roomMember.findUnique({
+      where: {
+        userId_roomId: {
+          userId,
+          roomId,
+        },
+      },
+      select: { isActive: true },
+    });
+
+    return Boolean(member?.isActive);
+  }
+
+  async create(createMessageDto: CreateMessageDto, senderId: string) {
     try {
+      const isMember = await this.isActiveRoomMember(
+        createMessageDto.roomId,
+        senderId,
+      );
+      if (!isMember) {
+        return failAction(null, false, 'User is not a member of this room');
+      }
+
       const message = await this.prisma.message.create({
         data: {
           content: createMessageDto.content,
           roomId: createMessageDto.roomId,
-          senderId: createMessageDto.senderId,
-          isDeleted: createMessageDto.isDeleted,
+          senderId,
           type: createMessageDto.type || 'TEXT',
         },
       });
@@ -34,11 +55,17 @@ export class MessagesService {
     return `This action returns all messages`;
   }
 
-  async findAllMessages(roomId: string, search?: string) {
+  async findAllMessages(roomId: string, userId: string, search?: string) {
     try {
+      const isMember = await this.isActiveRoomMember(roomId, userId);
+      if (!isMember) {
+        return failAction(null, false, 'User is not a member of this room');
+      }
+
       const messages = await this.prisma.message.findMany({
         where: {
           roomId: roomId,
+          isDeleted: false,
           ...(search?.trim() && {
             content: { contains: search.trim(), mode: 'insensitive' as const },
           }),
@@ -69,20 +96,63 @@ export class MessagesService {
     }
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} message`;
+  async findOne(id: string, userId: string) {
+    try {
+      const message = await this.prisma.message.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          content: true,
+          roomId: true,
+          senderId: true,
+          isDeleted: true,
+          type: true,
+          createdAt: true,
+          updatedAt: true,
+          sender: {
+            select: {
+              userName: true,
+              avatar: true,
+            },
+          },
+        },
+      });
+
+      if (!message || message.isDeleted) {
+        return failAction(null, false, 'Message not found !');
+      }
+
+      const isMember = await this.isActiveRoomMember(message.roomId, userId);
+      if (!isMember) {
+        return failAction(null, false, 'User is not a member of this room');
+      }
+
+      return successAction(message, true, 'Message found');
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
+    }
   }
 
-  async update(id: string, updateMessageDto: UpdateMessageDto) {
+  async update(id: string, userId: string, updateMessageDto: UpdateMessageDto) {
     try {
       const recoveredMessage = await this.prisma.message.findFirst({
         where: { id: id },
       });
+      if (!recoveredMessage || recoveredMessage.isDeleted) {
+        return failAction(null, false, 'Message not found !');
+      }
+
+      if (recoveredMessage.senderId !== userId) {
+        return failAction(null, false, 'Only the message author can edit it');
+      }
+
       if (recoveredMessage) {
         const newMessage = await this.prisma.message.update({
           where: { id: id },
           data: {
             content: updateMessageDto.content,
+            editedAt: new Date(),
           },
         });
         if (newMessage) {
@@ -101,18 +171,23 @@ export class MessagesService {
     }
   }
 
-  async remove(id: string) {
+  async remove(id: string, userId: string) {
     try {
       const recoveredMessage = await this.prisma.message.findFirst({
         where: { id: id },
       });
-      if (!recoveredMessage) {
+      if (!recoveredMessage || recoveredMessage.isDeleted) {
         return failAction(null, false, 'Message not found !');
       }
 
+      if (recoveredMessage.senderId !== userId) {
+        return failAction(null, false, 'Only the message author can delete it');
+      }
+
       if (recoveredMessage) {
-        const deletedMessage = await this.prisma.message.delete({
+        const deletedMessage = await this.prisma.message.update({
           where: { id: id },
+          data: { isDeleted: true },
         });
 
         if (deletedMessage) {

@@ -3,33 +3,100 @@ import { CreateRoomMemberDto } from './dto/create-room-member.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { failAction, successAction } from '../../utils/action.dto';
 import { UpdateMemberRoleDto } from './dto/update-room-member.dto';
-import { RoomRole } from '../../utils/types';
+import { RoomRole } from '../../../generated/prisma';
 
 @Injectable()
 export class RoomMembersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async joinRoom(createRoomMemberDto: CreateRoomMemberDto) {
+  private canManageMembers(role?: RoomRole) {
+    return role === RoomRole.OWNER || role === RoomRole.ADMIN;
+  }
+
+  private async findActiveMember(userId: string, roomId: string) {
+    return this.prisma.roomMember.findUnique({
+      where: {
+        userId_roomId: {
+          userId,
+          roomId,
+        },
+      },
+      select: {
+        id: true,
+        userId: true,
+        roomId: true,
+        role: true,
+        isActive: true,
+      },
+    });
+  }
+
+  async joinRoom(createRoomMemberDto: CreateRoomMemberDto, userId: string) {
     try {
+      const room = await this.prisma.room.findUnique({
+        where: { id: createRoomMemberDto.roomId },
+        select: { workspaceId: true },
+      });
+
+      if (!room) {
+        return failAction(null, false, 'Room:not found !');
+      }
+
+      const workspaceMember = await this.prisma.workspaceMember.findUnique({
+        where: {
+          workspaceId_userId: {
+            workspaceId: room.workspaceId,
+            userId,
+          },
+        },
+        select: { status: true },
+      });
+
+      if (!workspaceMember || workspaceMember.status !== 'ACTIVE') {
+        return failAction(
+          null,
+          false,
+          'User is not a member of this workspace',
+        );
+      }
+
       // Vérifier si cet utilisateur est déjà dans cette room spécifique
       const existingMember = await this.prisma.roomMember.findUnique({
         where: {
           userId_roomId: {
-            userId: createRoomMemberDto.userId,
+            userId,
             roomId: createRoomMemberDto.roomId,
           },
         },
       });
 
       if (existingMember) {
+        if (!existingMember.isActive) {
+          const reactivated = await this.prisma.roomMember.update({
+            where: { id: existingMember.id },
+            data: { isActive: true },
+            select: {
+              id: true,
+              userId: true,
+              roomId: true,
+              joinedAt: true,
+            },
+          });
+          return successAction(
+            reactivated,
+            true,
+            'Room membership reactivated !',
+          );
+        }
+
         return failAction(null, false, 'User is already a member of this room');
       }
 
       const newMember = await this.prisma.roomMember.create({
         data: {
-          userId: createRoomMemberDto.userId,
+          userId,
           roomId: createRoomMemberDto.roomId,
-          role: createRoomMemberDto.role as RoomRole,
+          role: RoomRole.MEMBER,
         },
         select: {
           id: true,
@@ -87,8 +154,35 @@ export class RoomMembersService {
     }
   }
 
-  async updateMemberRole(memberId: string, dto: UpdateMemberRoleDto) {
+  async updateMemberRole(
+    memberId: string,
+    actorUserId: string,
+    dto: UpdateMemberRoleDto,
+  ) {
     try {
+      const target = await this.prisma.roomMember.findUnique({
+        where: { id: memberId },
+        select: { id: true, userId: true, roomId: true, role: true },
+      });
+      if (!target) return failAction(null, false, 'Membre introuvable');
+
+      const actor = await this.findActiveMember(actorUserId, target.roomId);
+      if (!actor?.isActive || !this.canManageMembers(actor.role)) {
+        return failAction(null, false, 'Insufficient permissions');
+      }
+
+      if (target.role === RoomRole.OWNER && actor.role !== RoomRole.OWNER) {
+        return failAction(
+          null,
+          false,
+          'Only an owner can update another owner',
+        );
+      }
+
+      if (dto.role === RoomRole.OWNER && actor.role !== RoomRole.OWNER) {
+        return failAction(null, false, 'Only an owner can assign owner role');
+      }
+
       const updated = await this.prisma.roomMember.update({
         where: { id: memberId },
         data: { role: dto.role },
@@ -101,12 +195,21 @@ export class RoomMembersService {
     }
   }
 
-  async kickMember(memberId: string) {
+  async kickMember(memberId: string, actorUserId: string) {
     try {
       const target = await this.prisma.roomMember.findFirst({
         where: { id: memberId },
       });
       if (!target) return failAction(null, false, 'Membre introuvable');
+
+      const actor = await this.findActiveMember(actorUserId, target.roomId);
+      if (!actor?.isActive || !this.canManageMembers(actor.role)) {
+        return failAction(null, false, 'Insufficient permissions');
+      }
+
+      if (target.role === RoomRole.OWNER && actor.role !== RoomRole.OWNER) {
+        return failAction(null, false, 'Only an owner can kick another owner');
+      }
 
       await this.prisma.roomMember.delete({ where: { id: memberId } });
       return successAction(null, true, 'Membre exclu avec succès');
@@ -116,10 +219,18 @@ export class RoomMembersService {
     }
   }
 
-  async leaveRoom(id: string) {
+  async leaveRoom(id: string, userId: string) {
     try {
       const recoveredMember = await this.findById(id);
-      if (recoveredMember) {
+      if (recoveredMember.success && recoveredMember.data?.userId !== userId) {
+        return failAction(
+          null,
+          false,
+          'You can only leave your own membership',
+        );
+      }
+
+      if (recoveredMember.success) {
         const memberUpdated = await this.prisma.roomMember.update({
           where: { id: id },
           data: {
@@ -142,10 +253,33 @@ export class RoomMembersService {
     }
   }
 
-  async removeMember(id: string) {
+  async removeMember(id: string, actorUserId: string) {
     try {
       const recoveredMember = await this.findById(id);
-      if (recoveredMember) {
+      if (!recoveredMember.success || !recoveredMember.data) {
+        return failAction(null, false, 'Member:not found !');
+      }
+
+      const actor = await this.findActiveMember(
+        actorUserId,
+        recoveredMember.data.roomId,
+      );
+      if (!actor?.isActive || !this.canManageMembers(actor.role)) {
+        return failAction(null, false, 'Insufficient permissions');
+      }
+
+      if (
+        recoveredMember.data.role === RoomRole.OWNER &&
+        actor.role !== RoomRole.OWNER
+      ) {
+        return failAction(
+          null,
+          false,
+          'Only an owner can remove another owner',
+        );
+      }
+
+      if (recoveredMember.success) {
         const memberUpdated = await this.prisma.roomMember.delete({
           where: { id: id },
         });

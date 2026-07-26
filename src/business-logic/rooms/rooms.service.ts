@@ -7,8 +7,49 @@ import { failAction, successAction } from '../../utils/action.dto';
 @Injectable()
 export class RoomsService {
   constructor(private readonly prisma: PrismaService) {}
-  async create(createRoomDto: CreateRoomDto) {
+
+  private canManageRoom(role?: string) {
+    return role === 'OWNER' || role === 'ADMIN';
+  }
+
+  private async findActiveMember(roomId: string, userId: string) {
+    return this.prisma.roomMember.findUnique({
+      where: {
+        userId_roomId: {
+          userId,
+          roomId,
+        },
+      },
+      select: { role: true, isActive: true },
+    });
+  }
+
+  private async findActiveWorkspaceMember(workspaceId: string, userId: string) {
+    return this.prisma.workspaceMember.findUnique({
+      where: {
+        workspaceId_userId: {
+          workspaceId,
+          userId,
+        },
+      },
+      select: { role: true, status: true },
+    });
+  }
+
+  async create(createRoomDto: CreateRoomDto, ownerId: string) {
     try {
+      const workspaceMember = await this.findActiveWorkspaceMember(
+        createRoomDto.workspaceId,
+        ownerId,
+      );
+      if (!workspaceMember || workspaceMember.status !== 'ACTIVE') {
+        return failAction(
+          null,
+          false,
+          'User is not a member of this workspace',
+        );
+      }
+
       // const existingRoom = await this.prisma.room.findFirst({
       //   where: {
       //     OR: [
@@ -24,20 +65,35 @@ export class RoomsService {
       //     'Room with this name or description already exists',
       //   );
       // }
-      const createdRoom = await this.prisma.room.create({
-        data: {
-          name: createRoomDto.name,
-          description: createRoomDto.description,
-          isDirectMessage: createRoomDto.isDirectMessage,
-        },
-        select: {
-          id: true,
-          name: true,
-          description: true,
-          isDirectMessage: true,
-          createdAt: true,
-          updatedAt: true,
-        },
+      const createdRoom = await this.prisma.$transaction(async (tx) => {
+        const room = await tx.room.create({
+          data: {
+            name: createRoomDto.name,
+            description: createRoomDto.description,
+            isPrivate: createRoomDto.isPrivate,
+            isDirectMessage: createRoomDto.isDirectMessage,
+            workspaceId: createRoomDto.workspaceId,
+          },
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            isPrivate: true,
+            isDirectMessage: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        });
+
+        await tx.roomMember.create({
+          data: {
+            roomId: room.id,
+            userId: ownerId,
+            role: 'OWNER',
+          },
+        });
+
+        return room;
       });
 
       if (createdRoom) {
@@ -53,12 +109,31 @@ export class RoomsService {
   async findAll(
     page: number,
     page_size: number,
+    userId: string,
+    workspaceId?: string,
     search?: string,
     isDirectMessage?: boolean,
   ) {
     try {
+      if (!workspaceId) {
+        return failAction(null, false, 'workspaceId is required');
+      }
+
+      const workspaceMember = await this.findActiveWorkspaceMember(
+        workspaceId,
+        userId,
+      );
+      if (!workspaceMember || workspaceMember.status !== 'ACTIVE') {
+        return failAction(
+          null,
+          false,
+          'User is not a member of this workspace',
+        );
+      }
+
       const skip = (page - 1) * page_size;
       const where = {
+        workspaceId,
         ...(search?.trim() && {
           OR: [
             { name: { contains: search, mode: 'insensitive' as const } },
@@ -97,8 +172,15 @@ export class RoomsService {
     }
   }
 
-  async findById(id: string) {
+  async findById(id: string, userId?: string) {
     try {
+      if (userId) {
+        const member = await this.findActiveMember(id, userId);
+        if (!member?.isActive) {
+          return failAction(null, false, 'User is not a member of this room');
+        }
+      }
+
       const recoveredRoom = await this.prisma.room.findFirst({
         where: {
           id: id,
@@ -121,8 +203,13 @@ export class RoomsService {
     }
   }
 
-  async getRoomMembers(roomId: string) {
+  async getRoomMembers(roomId: string, userId: string) {
     try {
+      const member = await this.findActiveMember(roomId, userId);
+      if (!member?.isActive) {
+        return failAction(null, false, 'User is not a member of this room');
+      }
+
       const roomMembers = await this.prisma.roomMember.findMany({
         where: { roomId: roomId },
         select: {
@@ -154,15 +241,36 @@ export class RoomsService {
 
   async getUserRooms(
     userId: string,
+    workspaceId?: string,
     isDirectMessage?: boolean,
     search?: string,
   ) {
     try {
+      if (!workspaceId) {
+        return failAction(null, false, 'workspaceId is required');
+      }
+
+      const workspaceMember = await this.findActiveWorkspaceMember(
+        workspaceId,
+        userId,
+      );
+      if (!workspaceMember || workspaceMember.status !== 'ACTIVE') {
+        return failAction(
+          null,
+          false,
+          'User is not a member of this workspace',
+        );
+      }
+
       const rooms = await this.prisma.roomMember.findMany({
         where: {
           userId: userId,
+          room: {
+            workspaceId,
+          },
           ...(isDirectMessage !== undefined && {
             room: {
+              workspaceId,
               isDirectMessage: isDirectMessage,
             },
           }),
@@ -277,48 +385,46 @@ export class RoomsService {
     }
   }
 
-  async update(id: string, updateRoomDto: UpdateRoomDto) {
+  async update(id: string, userId: string, updateRoomDto: UpdateRoomDto) {
     try {
-      const recoveredRoom = await this.findById(id);
-      if (!recoveredRoom) {
-        return failAction(null, false, 'Room:not found !');
+      const member = await this.findActiveMember(id, userId);
+      if (!member?.isActive || !this.canManageRoom(member.role)) {
+        return failAction(null, false, 'Insufficient permissions');
       }
-      if (recoveredRoom) {
-        const updatedRoom = await this.prisma.room.update({
-          where: {
-            id: id,
-          },
-          data: {
-            name: updateRoomDto.name,
-            description: updateRoomDto.description,
-            updatedAt: new Date(),
-          },
-        });
-        if (updatedRoom)
-          return successAction(updatedRoom, true, 'Room:updated successfull!');
-      }
+
+      const updatedRoom = await this.prisma.room.update({
+        where: {
+          id: id,
+        },
+        data: {
+          name: updateRoomDto.name,
+          description: updateRoomDto.description,
+          updatedAt: new Date(),
+        },
+      });
+      if (updatedRoom)
+        return successAction(updatedRoom, true, 'Room:updated successfull!');
     } catch (e) {
       console.error(e);
       return failAction(null, false, `Error during action: ${e}`);
     }
   }
 
-  async remove(id: string) {
+  async remove(id: string, userId: string) {
     try {
-      const recoveredRoom = await this.findById(id);
-      if (!recoveredRoom) {
-        return failAction(null, false, 'Room:not found !');
+      const member = await this.findActiveMember(id, userId);
+      if (!member?.isActive || !this.canManageRoom(member.role)) {
+        return failAction(null, false, 'Insufficient permissions');
       }
-      if (recoveredRoom) {
-        const deletedRoom = await this.prisma.room.delete({
-          where: {
-            id: id,
-          },
-        });
 
-        if (deletedRoom)
-          return successAction(deletedRoom, true, 'Room:deleted successfull!');
-      }
+      const deletedRoom = await this.prisma.room.delete({
+        where: {
+          id: id,
+        },
+      });
+
+      if (deletedRoom)
+        return successAction(deletedRoom, true, 'Room:deleted successfull!');
     } catch (e) {
       console.error(e);
       return failAction(null, false, `Error during action: ${e}`);

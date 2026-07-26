@@ -1,10 +1,26 @@
-import { Controller, Post, Body, Param } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Param,
+  UseGuards,
+  Req,
+  ForbiddenException,
+} from '@nestjs/common';
+import type { Request } from 'express';
 import { AuthService } from '../../business-logic/auth/auth.service';
 import {
   AuthDto,
+  AcceptInvitationDto,
   RefreshTokenDto,
 } from '../../business-logic/auth/dto/auth.dto';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { JwtAuthGuard } from '../../guard/jwt.guard';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -14,7 +30,8 @@ export class AuthController {
   @Post('login')
   @ApiOperation({
     summary: 'Authentification of User',
-    description: 'Login avec email/password. Retourne un access token et un refresh token.',
+    description:
+      'Login avec email/password. Retourne un access token et un refresh token.',
   })
   @ApiResponse({
     status: 200,
@@ -41,9 +58,25 @@ export class AuthController {
     return this.authService.refreshToken(refreshTokenDto.refreshToken);
   }
 
+  @Post('accept-invitation')
+  @ApiOperation({
+    summary: 'Accept invitation',
+    description:
+      'Définit le mot de passe utilisateur depuis un token invitation.',
+  })
+  acceptInvitation(@Body() dto: AcceptInvitationDto) {
+    return this.authService.acceptInvitation(dto.token, dto.password);
+  }
+
   @Post('logout/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Logout of User' })
-  logout(@Param('id') id: string) {
+  logout(@Param('id') id: string, @Req() request: Request) {
+    const authenticatedUserId = (request.user as { sub?: string })?.sub;
+    if (authenticatedUserId !== id) {
+      throw new ForbiddenException('You can only logout your own account');
+    }
     return this.authService.logout(id);
   }
 }

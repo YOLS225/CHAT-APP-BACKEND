@@ -22,6 +22,21 @@ export class RefreshTokenDto {
   refreshToken: string;
 }
 
+export class AcceptInvitationDto {
+  @ApiProperty({
+    example: 'invitation-token',
+    description: 'Token present dans le lien d invitation',
+  })
+  @IsString()
+  @IsNotEmpty()
+  token: string;
+
+  @ApiProperty({ example: 'newPassword123' })
+  @IsString()
+  @IsNotEmpty()
+  password: string;
+}
+
 export class AuthResponseDto {
   @ApiProperty()
   user: {

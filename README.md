@@ -6,6 +6,8 @@ Backend d'application de chat en temps réel développé avec NestJS, TypeScript
 
 Application backend permettant la gestion d'utilisateurs, de salles de discussion (rooms), de messages, de membres de salles avec un système d'authentification JWT, de rôles et de statistiques utilisateur.
 
+L'application est orientée entreprise : les utilisateurs, rooms, DMs et invitations sont organisés par workspace.
+
 ## Prérequis
 
 - **Node.js** >= 20.x
@@ -24,7 +26,7 @@ src/
 │   ├── rooms/              # Endpoints de gestion des salles
 │   ├── room-members/       # Endpoints de gestion des membres
 │   ├── statistics/         # Endpoints de statistiques
-│   ├── storage/            # Endpoints d'upload de fichiers (MinIO)
+│   ├── workspaces/         # Endpoints entreprise, membres, import CSV, DMs
 │   └── users/              # Endpoints de gestion des utilisateurs
 ├── business-logic/          # Couche métier (Services)
 │   ├── auth/               # Logique d'authentification
@@ -32,7 +34,7 @@ src/
 │   ├── rooms/              # Logique métier des salles
 │   ├── room-members/       # Logique métier des membres
 │   ├── statistics/         # Logique métier des statistiques
-│   ├── storage/            # Logique d'upload (MinIO)
+│   ├── workspaces/         # Logique workspace, import CSV et invitations
 │   └── users/              # Logique métier des utilisateurs
 ├── guard/                   # Sécurité (JWT Guards & Strategies)
 ├── prisma/                  # Couche d'accès aux données
@@ -58,9 +60,6 @@ src/
 - **Prisma** - ORM moderne avec génération de types TypeScript
 - Migrations gérées par Prisma
 
-### Stockage de fichiers
-- **MinIO** - Stockage objet compatible S3 (avatars, fichiers)
-
 ### Authentification & Sécurité
 - **JWT (jsonwebtoken)** - Access token (25min) + Refresh token (7j)
 - **bcrypt** - Hachage sécurisé des mots de passe
@@ -83,10 +82,15 @@ src/
 - `id` (UUID), `userName` (unique), `email` (unique), `password` (hashé)
 - `avatar` (optionnel), `isOnline`, `lastSeen`
 - `status` : `ACTIVE` | `INACTIVE` | `BANNED` | `SUSPENDED`
+- `password` peut être vide pour un utilisateur invité
 
 **Room**
 - `id` (UUID), `name`, `description` (optionnel)
-- `isPrivate`, `isDirectMessage`, `maxMembers` (défaut: 100), `isActive`
+- `workspaceId`, `isPrivate`, `isDirectMessage`, `maxMembers` (défaut: 100), `isActive`
+
+**Workspace**
+- `id` (UUID), `name`
+- Regroupe les utilisateurs, rooms et conversations directes d'une entreprise
 
 **Message**
 - `id` (UUID), `content`, `type` : `TEXT` | `IMAGE` | `FILE` | `SYSTEM`
@@ -97,6 +101,14 @@ src/
 - `role` : `OWNER` | `ADMIN` | `MODERATOR` | `MEMBER`
 - `joinedAt`, `isActive`
 
+**WorkspaceMember**
+- `id` (UUID), `userId`, `workspaceId`
+- `role` : `OWNER` | `ADMIN` | `MEMBER`
+- `status` : `ACTIVE` | `INVITED` | `DISABLED`
+
+**InvitationToken**
+- Token temporaire permettant à un utilisateur invité de définir son mot de passe
+
 ## Installation
 
 ### Avec Docker (recommandé)
@@ -105,7 +117,7 @@ src/
 # Configurer les variables d'environnement
 cp .env.example .env
 
-# Build et démarrage de tous les services (app + postgres + minio)
+# Build et démarrage des services (app + postgres)
 make build
 ```
 
@@ -120,7 +132,7 @@ npm install
 # Configurer les variables d'environnement
 cp .env.example .env
 
-# Démarrer PostgreSQL et MinIO
+# Démarrer PostgreSQL
 make up
 
 # Générer le client Prisma et appliquer les migrations
@@ -143,24 +155,16 @@ JWT_SECRET="your-secret-key"
 JWT_EXPIRES_IN="25min"
 JWT_REFRESH_SECRET="your-refresh-secret-key"
 JWT_REFRESH_EXPIRES_IN="7d"
-
-MINIO_ENDPOINT=localhost
-MINIO_PORT=9001
-MINIO_USE_SSL=false
-MINIO_ACCESS_KEY=minioadmin
-MINIO_SECRET_KEY=minioadmin
-MINIO_BUCKET=chat-app
 ```
 
 ## Services Docker
 
-Le fichier `compose.yaml` démarre trois services :
+Le fichier `compose.yaml` démarre deux services :
 
 | Service    | Description                          | Port(s)                        |
 |------------|--------------------------------------|--------------------------------|
 | `app`      | API NestJS                           | `9000`                         |
 | `postgres` | Base de données PostgreSQL 16.2      | `5469` → `5432`                |
-| `minio`    | Stockage objet S3-compatible         | `9001` (API), `9002` (Console) |
 
 ### Commandes Make
 
@@ -171,7 +175,7 @@ make down    # Arrête et supprime les containers + volumes
 make reset   # Repart de zéro (down + build)
 ```
 
-Les données sont persistées dans les volumes Docker `chat-backend_postgres_data` et `minio_data`.
+Les données PostgreSQL sont persistées dans le volume Docker `chat-backend_postgres_data`.
 
 ## Scripts disponibles
 
@@ -209,13 +213,23 @@ npm run format
 |---|---|---|
 | POST | `/auth/login` | Connexion (retourne access + refresh token) |
 | POST | `/auth/refresh` | Renouveler l'access token |
+| POST | `/auth/accept-invitation` | Accepter une invitation et définir un mot de passe |
 | POST | `/auth/logout/:id` | Déconnexion |
+
+### Workspaces
+| Méthode | Route | Description |
+|---|---|---|
+| POST | `/workspaces` | Créer un workspace |
+| GET | `/workspaces` | Lister les workspaces de l'utilisateur connecté |
+| GET | `/workspaces/:workspaceId/users?search` | Lister les utilisateurs du workspace |
+| POST | `/workspaces/:workspaceId/users/import` | Importer des utilisateurs depuis du CSV texte |
+| POST | `/workspaces/:workspaceId/dms` | Créer ou récupérer une conversation directe |
 
 ### Users
 | Méthode | Route | Description |
 |---|---|---|
 | POST | `/users` | Créer un compte utilisateur |
-| GET | `/users?page&page_size&search` | Lister les utilisateurs |
+| GET | `/users?page&page_size&workspaceId&search` | Lister les utilisateurs accessibles dans un workspace |
 | GET | `/users/:id` | Récupérer un utilisateur |
 | PATCH | `/users/:id` | Modifier `userName`, `email`, `avatar` |
 | PATCH | `/users/:id/password` | Modifier le mot de passe |
@@ -225,11 +239,11 @@ npm run format
 ### Rooms
 | Méthode | Route | Description |
 |---|---|---|
-| POST | `/rooms` | Créer une room |
-| GET | `/rooms?page&page_size&search&isDirectMessage` | Lister les rooms |
+| POST | `/rooms` | Créer une room dans un workspace |
+| GET | `/rooms?page&page_size&workspaceId&search&isDirectMessage` | Lister les rooms d'un workspace |
 | GET | `/rooms/:id` | Récupérer une room |
 | GET | `/rooms/members/:id` | Membres d'une room |
-| GET | `/rooms/user-rooms/:id?isDirectMessage&search` | Rooms d'un utilisateur |
+| GET | `/rooms/user-rooms/:id?workspaceId&isDirectMessage&search` | Rooms d'un utilisateur dans un workspace |
 | PATCH | `/rooms/:id` | Modifier une room |
 | DELETE | `/rooms/:id` | Supprimer une room |
 
@@ -252,11 +266,6 @@ npm run format
 | PATCH | `/room-members/leave/:id` | Quitter une room |
 | DELETE | `/room-members/:memberId/kick` | Exclure un membre |
 | DELETE | `/room-members/:id` | Supprimer un membre |
-
-### Storage
-| Méthode | Route | Description |
-|---|---|---|
-| POST | `/storage/upload/avatar/:userId` | Upload d'avatar (multipart/form-data) |
 
 ### Statistics
 | Méthode | Route | Description |

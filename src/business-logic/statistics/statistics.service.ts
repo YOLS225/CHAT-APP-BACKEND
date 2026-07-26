@@ -8,6 +8,7 @@ import {
   RecentActivity,
   UserStatistics,
 } from './entities/user-statistics.entity';
+import { Prisma } from '../../../generated/prisma';
 
 @Injectable()
 export class StatisticsService {
@@ -77,7 +78,7 @@ export class StatisticsService {
    */
   async getAverageResponseTime(userId: string, days?: number) {
     try {
-      const whereClause: any = {
+      const whereClause: Prisma.MessageWhereInput = {
         isDeleted: false,
       };
 
@@ -126,7 +127,7 @@ export class StatisticsService {
       // Calculer les temps de réponse
       const responseTimes: number[] = [];
       let currentRoomId = '';
-      let previousMessage: any = null;
+      let previousMessage: (typeof messages)[number] | null = null;
 
       for (const message of messages) {
         // Si on change de room, on reset
@@ -143,7 +144,8 @@ export class StatisticsService {
           previousMessage.senderId !== userId
         ) {
           const responseTime =
-            (message.createdAt.getTime() - previousMessage.createdAt.getTime()) /
+            (message.createdAt.getTime() -
+              previousMessage.createdAt.getTime()) /
             1000; // en secondes
           responseTimes.push(responseTime);
         }

@@ -9,7 +9,7 @@ import { RoomsModule } from './business-logic/rooms/rooms.module';
 import { RoomMembersModule } from './business-logic/room-members/room-members.module';
 import { AuthModule } from './business-logic/auth/auth.module';
 import { StatisticsModule } from './business-logic/statistics/statistics.module';
-import { StorageModule } from './business-logic/storage/storage.module';
+import { WorkspacesModule } from './business-logic/workspaces/workspaces.module';
 import { ConfigModule } from '@nestjs/config';
 
 @Module({
@@ -21,7 +21,7 @@ import { ConfigModule } from '@nestjs/config';
     RoomMembersModule,
     AuthModule,
     StatisticsModule,
-    StorageModule,
+    WorkspacesModule,
     ConfigModule.forRoot({ isGlobal: true }),
   ],
   controllers: [AppController],

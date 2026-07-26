@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { AuthDto } from './dto/auth.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { compare } from 'bcrypt';
+import { hash } from 'bcrypt';
 import { failAction, successAction } from '../../utils/action.dto';
 import {
   signJwt,
@@ -28,6 +29,14 @@ export class AuthService {
       // Si l'utilisateur n'est pas actif, retourner une erreur
       if (recoveredUser.status !== 'ACTIVE') {
         return failAction(null, false, 'User is not active !');
+      }
+
+      if (!recoveredUser.password) {
+        return failAction(
+          null,
+          false,
+          'Compte invité: veuillez accepter votre invitation pour définir votre mot de passe.',
+        );
       }
 
       //Verrifier le mot de passe
@@ -105,7 +114,7 @@ export class AuthService {
       // 1. Vérifier que le refresh token est valide
       const decoded = verifyRefreshJwt(refreshToken);
 
-      if (!decoded || !decoded.sub) {
+      if (!decoded || typeof decoded === 'string' || !decoded.sub) {
         return failAction(null, false, 'Invalid or expired refresh token');
       }
 
@@ -143,6 +152,76 @@ export class AuthService {
     } catch (e) {
       console.error(e);
       return failAction(null, false, `Error during token refresh: ${e}`);
+    }
+  }
+
+  async acceptInvitation(token: string, password: string) {
+    try {
+      const invitation = await this.prisma.invitationToken.findUnique({
+        where: { token },
+        select: {
+          id: true,
+          userId: true,
+          workspaceId: true,
+          expiresAt: true,
+          usedAt: true,
+          user: {
+            select: {
+              id: true,
+              email: true,
+              userName: true,
+            },
+          },
+        },
+      });
+
+      if (!invitation || invitation.usedAt) {
+        return failAction(null, false, 'Invitation invalide');
+      }
+
+      if (invitation.expiresAt.getTime() < Date.now()) {
+        return failAction(null, false, 'Invitation expirée');
+      }
+
+      const hashedPassword = await hash(password, 10);
+
+      await this.prisma.$transaction([
+        this.prisma.user.update({
+          where: { id: invitation.userId },
+          data: {
+            password: hashedPassword,
+          },
+        }),
+        this.prisma.workspaceMember.update({
+          where: {
+            workspaceId_userId: {
+              workspaceId: invitation.workspaceId,
+              userId: invitation.userId,
+            },
+          },
+          data: {
+            status: 'ACTIVE',
+          },
+        }),
+        this.prisma.invitationToken.update({
+          where: { id: invitation.id },
+          data: {
+            usedAt: new Date(),
+          },
+        }),
+      ]);
+
+      return successAction(
+        {
+          user: invitation.user,
+          workspaceId: invitation.workspaceId,
+        },
+        true,
+        'Invitation acceptée avec succès',
+      );
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
     }
   }
 }

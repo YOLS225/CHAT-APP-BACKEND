@@ -1,20 +1,22 @@
 import * as jwt from 'jsonwebtoken';
-import { ConfigService } from '@nestjs/config';
 
-const configService = new ConfigService(); // seulement si tu n'injectes pas
+function getRequiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}
 
 export function signJwt(payload: object): string {
-  return jwt.sign(payload, configService.get('JWT_SECRET') || 'defaultSecret', {
-    expiresIn: configService.get('JWT_EXPIRES_IN') || '25min',
+  return jwt.sign(payload, getRequiredEnv('JWT_SECRET'), {
+    expiresIn: process.env.JWT_EXPIRES_IN || '25min',
   });
 }
 
-export function verifyJwt(token: string): any {
+export function verifyJwt(token: string): jwt.JwtPayload | string | null {
   try {
-    return jwt.verify(
-      token,
-      configService.get('JWT_SECRET') || 'defaultSecret',
-    );
+    return jwt.verify(token, getRequiredEnv('JWT_SECRET'));
   } catch (error) {
     console.error(error);
     return null;
@@ -22,21 +24,16 @@ export function verifyJwt(token: string): any {
 }
 
 export function signRefreshJwt(payload: object): string {
-  return jwt.sign(
-    payload,
-    configService.get('JWT_REFRESH_SECRET') || 'defsecret',
-    {
-      expiresIn: configService.get('JWT_REFRESH_EXPIRES_IN') || '7d',
-    },
-  );
+  return jwt.sign(payload, getRequiredEnv('JWT_REFRESH_SECRET'), {
+    expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
+  });
 }
 
-export function verifyRefreshJwt(token: string): any {
+export function verifyRefreshJwt(
+  token: string,
+): jwt.JwtPayload | string | null {
   try {
-    return jwt.verify(
-      token,
-      configService.get('JWT_REFRESH_SECRET') || 'defsecret',
-    );
+    return jwt.verify(token, getRequiredEnv('JWT_REFRESH_SECRET'));
   } catch (error) {
     console.error(error);
     return null;

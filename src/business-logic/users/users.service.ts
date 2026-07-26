@@ -60,7 +60,91 @@ export class UsersService {
     }
   }
 
-  async findAll(page: number, page_size: number, search?: string) {
+  async findAll(
+    page: number,
+    page_size: number,
+    actorUserId: string,
+    workspaceId?: string,
+    search?: string,
+  ) {
+    try {
+      if (!workspaceId) {
+        return failAction(null, false, 'workspaceId is required');
+      }
+
+      const actor = await this.prisma.workspaceMember.findUnique({
+        where: {
+          workspaceId_userId: {
+            workspaceId,
+            userId: actorUserId,
+          },
+        },
+        select: { status: true },
+      });
+
+      if (!actor || actor.status !== 'ACTIVE') {
+        return failAction(
+          null,
+          false,
+          'User is not a member of this workspace',
+        );
+      }
+
+      const skip = (page - 1) * page_size;
+
+      const where = {
+        workspaceId,
+        status: { not: 'DISABLED' as const },
+        user: {
+          status: { not: UserStatus.INACTIVE },
+          ...(search?.trim() && {
+            OR: [
+              { userName: { contains: search, mode: 'insensitive' as const } },
+              { email: { contains: search, mode: 'insensitive' as const } },
+            ],
+          }),
+        },
+      };
+
+      const [content, total] = await Promise.all([
+        this.prisma.workspaceMember.findMany({
+          skip,
+          take: page_size,
+          where,
+          select: {
+            role: true,
+            status: true,
+            user: {
+              select: {
+                id: true,
+                userName: true,
+                email: true,
+                avatar: true,
+                isOnline: true,
+                createdAt: true,
+                updatedAt: true,
+                lastSeen: true,
+                status: true,
+              },
+            },
+          },
+          orderBy: { joinedAt: 'asc' as const },
+        }),
+        this.prisma.workspaceMember.count({ where }),
+      ]);
+
+      return successAction(
+        { content, total, page, page_size },
+        true,
+        'User: find successfully!',
+      );
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
+    }
+  }
+
+  async findAllPlatform(page: number, page_size: number, search?: string) {
     try {
       const skip = (page - 1) * page_size;
 
@@ -137,7 +221,7 @@ export class UsersService {
   async updateUser(id: string, updateUserDto: UpdateUserDto) {
     try {
       const recoveredUser = await this.findById(id);
-      if (!recoveredUser) {
+      if (!recoveredUser.success) {
         return failAction(null, false, 'User:not found !');
       }
       const userUpdated = await this.prisma.user.update({
@@ -172,6 +256,13 @@ export class UsersService {
       if (!user) {
         return failAction(null, false, 'User:not found !');
       }
+      if (!user.password) {
+        return failAction(
+          null,
+          false,
+          'Compte invité: veuillez accepter votre invitation pour définir votre mot de passe.',
+        );
+      }
       const isMatch = await compare(
         updatePasswordDto.currentPassword,
         user.password,
@@ -194,7 +285,7 @@ export class UsersService {
   async deleteUser(id: string) {
     try {
       const recoveredUser = await this.findById(id);
-      if (recoveredUser) {
+      if (recoveredUser.success) {
         const userUpdated = await this.prisma.user.update({
           where: {
             id: id,
@@ -222,7 +313,7 @@ export class UsersService {
   async deleteUserForce(id: string) {
     try {
       const recoveredUser = await this.findById(id);
-      if (recoveredUser) {
+      if (recoveredUser.success) {
         const userUpdated = await this.prisma.user.delete({
           where: {
             id: id,
