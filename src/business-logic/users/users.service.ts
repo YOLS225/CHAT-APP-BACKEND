@@ -5,10 +5,25 @@ import { failAction, successAction } from '../../utils/action.dto';
 import { UserStatus } from '../../utils/types';
 import { hash, compare } from 'bcrypt';
 import { UpdateUserDto, UpdatePasswordDto } from './dto/update-user.dto';
+import { PlatformRole } from '../../../generated/prisma';
 
 @Injectable()
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private async resolvePlatformRole(email: string) {
+    const adminEmails = (process.env.PLATFORM_ADMIN_EMAILS || '')
+      .split(',')
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean);
+
+    if (adminEmails.includes(email.toLowerCase())) {
+      return PlatformRole.SUPER_ADMIN;
+    }
+
+    const usersCount = await this.prisma.user.count();
+    return usersCount === 0 ? PlatformRole.SUPER_ADMIN : PlatformRole.USER;
+  }
 
   async save(createUserDto: CreateUserDto) {
     try {
@@ -31,6 +46,7 @@ export class UsersService {
 
       // Hash du mot de passe
       const hashedPassword = await hash(createUserDto.password, 10);
+      const platformRole = await this.resolvePlatformRole(createUserDto.email);
 
       const createdUser = await this.prisma.user.create({
         data: {
@@ -39,6 +55,7 @@ export class UsersService {
           password: hashedPassword,
           avatar: createUserDto.avatar,
           isOnline: createUserDto.isOnline || false,
+          platformRole,
         },
         select: {
           id: true,
@@ -47,6 +64,7 @@ export class UsersService {
           avatar: true,
           isOnline: true,
           status: true,
+          platformRole: true,
         },
       });
 
@@ -125,6 +143,7 @@ export class UsersService {
                 updatedAt: true,
                 lastSeen: true,
                 status: true,
+                platformRole: true,
               },
             },
           },
@@ -173,6 +192,7 @@ export class UsersService {
             updatedAt: true,
             lastSeen: true,
             status: true,
+            platformRole: true,
           },
           orderBy: { createdAt: 'asc' as const },
         }),
@@ -206,6 +226,7 @@ export class UsersService {
           updatedAt: true,
           lastSeen: true,
           status: true,
+          platformRole: true,
         },
       });
       if (!recoveredUser) {

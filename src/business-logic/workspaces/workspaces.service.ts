@@ -4,12 +4,15 @@ import * as XLSX from 'xlsx';
 import {
   Prisma,
   RoomRole,
+  PlatformRole,
   WorkspaceMemberStatus,
   WorkspaceRole,
 } from '../../../generated/prisma';
 import { PrismaService } from '../../prisma/prisma.service';
 import { failAction, successAction } from '../../utils/action.dto';
+import { MailService } from '../mail/mail.service';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
+import { UpdateWorkspaceMemberDto } from './dto/update-workspace-member.dto';
 
 type CsvUserRow = {
   email: string;
@@ -20,7 +23,10 @@ type CsvUserRow = {
 
 @Injectable()
 export class WorkspacesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mailService: MailService,
+  ) {}
 
   private canManageWorkspace(role?: WorkspaceRole) {
     return role === WorkspaceRole.OWNER || role === WorkspaceRole.ADMIN;
@@ -160,6 +166,18 @@ export class WorkspacesService {
 
   async create(dto: CreateWorkspaceDto, ownerId: string) {
     try {
+      const owner = await this.prisma.user.findUnique({
+        where: { id: ownerId },
+        select: { platformRole: true },
+      });
+      if (owner?.platformRole !== PlatformRole.SUPER_ADMIN) {
+        return failAction(
+          null,
+          false,
+          'Only platform admins can create workspaces',
+        );
+      }
+
       const workspace = await this.prisma.$transaction(async (tx) => {
         const created = await tx.workspace.create({
           data: {
@@ -298,6 +316,111 @@ export class WorkspacesService {
     }
   }
 
+  async updateMember(
+    workspaceId: string,
+    targetUserId: string,
+    actorUserId: string,
+    dto: UpdateWorkspaceMemberDto,
+  ) {
+    try {
+      const [actor, target] = await Promise.all([
+        this.findActiveWorkspaceMember(workspaceId, actorUserId),
+        this.prisma.workspaceMember.findUnique({
+          where: {
+            workspaceId_userId: {
+              workspaceId,
+              userId: targetUserId,
+            },
+          },
+          select: {
+            id: true,
+            role: true,
+            status: true,
+            userId: true,
+          },
+        }),
+      ]);
+
+      if (
+        !actor ||
+        actor.status !== WorkspaceMemberStatus.ACTIVE ||
+        !this.canManageWorkspace(actor.role)
+      ) {
+        return failAction(null, false, 'Insufficient permissions');
+      }
+
+      if (!target) {
+        return failAction(null, false, 'Workspace member not found');
+      }
+
+      if (
+        target.role === WorkspaceRole.OWNER &&
+        actor.role !== WorkspaceRole.OWNER
+      ) {
+        return failAction(
+          null,
+          false,
+          'Only an owner can modify another owner',
+        );
+      }
+
+      if (
+        dto.role === WorkspaceRole.OWNER &&
+        actor.role !== WorkspaceRole.OWNER
+      ) {
+        return failAction(null, false, 'Only an owner can assign owner role');
+      }
+
+      if (
+        target.userId === actorUserId &&
+        dto.status === WorkspaceMemberStatus.DISABLED
+      ) {
+        return failAction(
+          null,
+          false,
+          'You cannot disable your own membership',
+        );
+      }
+
+      const updated = await this.prisma.workspaceMember.update({
+        where: { id: target.id },
+        data: {
+          role: dto.role,
+          status: dto.status,
+        },
+        select: {
+          id: true,
+          role: true,
+          status: true,
+          user: {
+            select: {
+              id: true,
+              userName: true,
+              email: true,
+              avatar: true,
+              isOnline: true,
+            },
+          },
+        },
+      });
+
+      return successAction(updated, true, 'Workspace member updated');
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
+    }
+  }
+
+  async disableMember(
+    workspaceId: string,
+    targetUserId: string,
+    actorUserId: string,
+  ) {
+    return this.updateMember(workspaceId, targetUserId, actorUserId, {
+      status: WorkspaceMemberStatus.DISABLED,
+    });
+  }
+
   private async importUsersFromCsv(
     workspaceId: string,
     actorUserId: string,
@@ -315,6 +438,14 @@ export class WorkspacesService {
         !this.canManageWorkspace(actor.role)
       ) {
         return failAction(null, false, 'Insufficient permissions');
+      }
+
+      const workspace = await this.prisma.workspace.findUnique({
+        where: { id: workspaceId },
+        select: { name: true },
+      });
+      if (!workspace) {
+        return failAction(null, false, 'Workspace not found');
       }
 
       const { rows, errors } = this.parseUsersCsv(csv);
@@ -392,6 +523,7 @@ export class WorkspacesService {
       const imported = await this.prisma.$transaction(async (tx) => {
         const results: Array<{
           email: string;
+          userName: string;
           userId: string;
           action: string;
           invitationUrl?: string;
@@ -402,6 +534,7 @@ export class WorkspacesService {
           if (existingMembership) {
             results.push({
               email: row.email,
+              userName: row.userName,
               userId: existingByEmail.get(row.email)?.id || '',
               action: 'already_member',
             });
@@ -443,6 +576,7 @@ export class WorkspacesService {
 
           results.push({
             email: row.email,
+            userName: row.userName,
             userId: user.id,
             action: existingByEmail.has(row.email)
               ? 'attached_existing_user'
@@ -454,7 +588,47 @@ export class WorkspacesService {
         return results;
       });
 
-      return successAction({ imported }, true, 'Users imported successfully');
+      const importedWithEmailStatus = await Promise.all(
+        imported.map(async (result) => {
+          if (!result.invitationUrl) {
+            return {
+              ...result,
+              emailSent: false,
+              emailSkipped: true,
+            };
+          }
+
+          try {
+            const delivery = await this.mailService.sendInvitationEmail({
+              to: result.email,
+              userName: result.userName,
+              workspaceName: workspace.name,
+              invitationUrl: result.invitationUrl,
+            });
+
+            return {
+              ...result,
+              emailSent: delivery.sent,
+              emailSkipped: delivery.skipped,
+            };
+          } catch (error) {
+            console.error(error);
+            return {
+              ...result,
+              emailSent: false,
+              emailSkipped: false,
+              emailError:
+                error instanceof Error ? error.message : 'Email send failed',
+            };
+          }
+        }),
+      );
+
+      return successAction(
+        { imported: importedWithEmailStatus },
+        true,
+        'Users imported successfully',
+      );
     } catch (e) {
       console.error(e);
       return failAction(null, false, `Error during action: ${e}`);

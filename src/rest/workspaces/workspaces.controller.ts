@@ -1,8 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -22,6 +24,7 @@ import {
 import { JwtAuthGuard } from '../../guard/jwt.guard';
 import { CreateDirectMessageDto } from '../../business-logic/workspaces/dto/create-direct-message.dto';
 import { CreateWorkspaceDto } from '../../business-logic/workspaces/dto/create-workspace.dto';
+import { UpdateWorkspaceMemberDto } from '../../business-logic/workspaces/dto/update-workspace-member.dto';
 import { WorkspacesService } from '../../business-logic/workspaces/workspaces.service';
 
 @Controller('workspaces')
@@ -63,6 +66,36 @@ export class WorkspacesController {
       workspaceId,
       this.getAuthenticatedUserId(request),
       search,
+    );
+  }
+
+  @Patch(':workspaceId/users/:userId')
+  @ApiOperation({ summary: 'Update workspace member role or status' })
+  updateMember(
+    @Param('workspaceId') workspaceId: string,
+    @Param('userId') userId: string,
+    @Body() dto: UpdateWorkspaceMemberDto,
+    @Req() request: Request,
+  ) {
+    return this.workspacesService.updateMember(
+      workspaceId,
+      userId,
+      this.getAuthenticatedUserId(request),
+      dto,
+    );
+  }
+
+  @Delete(':workspaceId/users/:userId')
+  @ApiOperation({ summary: 'Disable a workspace member' })
+  disableMember(
+    @Param('workspaceId') workspaceId: string,
+    @Param('userId') userId: string,
+    @Req() request: Request,
+  ) {
+    return this.workspacesService.disableMember(
+      workspaceId,
+      userId,
+      this.getAuthenticatedUserId(request),
     );
   }
 

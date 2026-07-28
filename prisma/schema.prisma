@@ -25,6 +25,7 @@ model User {
   isOnline  Boolean    @default(false)
   lastSeen  DateTime   @default(now())
   status    UserStatus @default(ACTIVE)
+  platformRole PlatformRole @default(USER)
 
   // Relations
   sentMessages         Message[]          @relation("MessageSender")
@@ -152,6 +153,11 @@ enum UserStatus {
   INACTIVE
   BANNED
   SUSPENDED
+}
+
+enum PlatformRole {
+  SUPER_ADMIN
+  USER
 }
 
 enum MessageType {

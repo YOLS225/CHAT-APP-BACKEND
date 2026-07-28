@@ -83,6 +83,7 @@ src/
 - `avatar` (optionnel), `isOnline`, `lastSeen`
 - `status` : `ACTIVE` | `INACTIVE` | `BANNED` | `SUSPENDED`
 - `password` peut être vide pour un utilisateur invité
+- `platformRole` : `SUPER_ADMIN` | `USER`
 
 **Room**
 - `id` (UUID), `name`, `description` (optionnel)
@@ -105,6 +106,29 @@ src/
 - `id` (UUID), `userId`, `workspaceId`
 - `role` : `OWNER` | `ADMIN` | `MEMBER`
 - `status` : `ACTIVE` | `INVITED` | `DISABLED`
+
+### Rôles et permissions
+
+**SUPER_ADMIN**
+- Crée les workspaces.
+- Devient `OWNER` du workspace créé.
+
+**Workspace OWNER**
+- Invite/import des utilisateurs.
+- Modifie les rôles et statuts des membres du workspace.
+- Peut promouvoir un autre membre en `OWNER`.
+- Gère les rooms du workspace.
+
+**Workspace ADMIN**
+- Invite/import des utilisateurs.
+- Modifie ou désactive les membres simples.
+- Ne peut pas gérer un `OWNER`.
+- Gère les rooms du workspace.
+
+**Workspace MEMBER**
+- Peut créer des DMs avec les membres actifs du même workspace.
+- Peut accéder uniquement aux rooms dont il est membre.
+- Peut envoyer/lire des messages dans ses rooms.
 
 **InvitationToken**
 - Token temporaire permettant à un utilisateur invité de définir son mot de passe
@@ -155,7 +179,52 @@ JWT_SECRET="your-secret-key"
 JWT_EXPIRES_IN="25min"
 JWT_REFRESH_SECRET="your-refresh-secret-key"
 JWT_REFRESH_EXPIRES_IN="7d"
+
+MAIL_DRIVER=console
+SMTP_HOST=smtp-relay.brevo.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER="your-brevo-login"
+SMTP_PASS="your-brevo-password"
+MAIL_FROM="Chat App <noreply@example.com>"
 ```
+
+### Configuration email
+
+Les invitations utilisateur peuvent etre envoyees automatiquement par email.
+
+En developpement, utiliser le mode console:
+
+```env
+MAIL_DRIVER=console
+```
+
+Dans ce mode, aucun email reel n'est envoye. Le backend log les liens d'invitation et les retourne aussi dans la reponse d'import.
+
+En production avec Brevo SMTP:
+
+```env
+MAIL_DRIVER=smtp
+SMTP_HOST=smtp-relay.brevo.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER="your-brevo-login"
+SMTP_PASS="your-brevo-password"
+MAIL_FROM="Chat App <noreply@your-domain.com>"
+FRONTEND_URL="https://your-frontend-domain.com"
+```
+
+`FRONTEND_URL` sert a construire les liens:
+
+```txt
+https://your-frontend-domain.com/accept-invitation?token=...
+```
+
+Pendant un import Excel, l'API retourne un statut par utilisateur:
+
+- `emailSent: true` : email envoye.
+- `emailSkipped: true` : mode console, pas d'envoi reel.
+- `emailError` : l'utilisateur et l'invitation sont crees, mais l'email a echoue.
 
 ## Services Docker
 
@@ -222,6 +291,8 @@ npm run format
 | POST | `/workspaces` | Créer un workspace |
 | GET | `/workspaces` | Lister les workspaces de l'utilisateur connecté |
 | GET | `/workspaces/:workspaceId/users?search` | Lister les utilisateurs du workspace |
+| PATCH | `/workspaces/:workspaceId/users/:userId` | Modifier rôle/statut d'un membre |
+| DELETE | `/workspaces/:workspaceId/users/:userId` | Désactiver un membre du workspace |
 | POST | `/workspaces/:workspaceId/users/import/excel?dryRun=true` | Importer des utilisateurs depuis Excel/CSV multipart |
 | POST | `/workspaces/:workspaceId/dms` | Créer ou récupérer une conversation directe |
 

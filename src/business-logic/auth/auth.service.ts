@@ -72,6 +72,7 @@ export class AuthService {
               email: recoveredUser.email,
               isOnline: true,
               avatar: recoveredUser.avatar,
+              platformRole: recoveredUser.platformRole,
             },
           };
           return successAction(data, true, 'Authentification successful !');
