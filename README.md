@@ -222,7 +222,7 @@ npm run format
 | POST | `/workspaces` | Créer un workspace |
 | GET | `/workspaces` | Lister les workspaces de l'utilisateur connecté |
 | GET | `/workspaces/:workspaceId/users?search` | Lister les utilisateurs du workspace |
-| POST | `/workspaces/:workspaceId/users/import` | Importer des utilisateurs depuis du CSV texte |
+| POST | `/workspaces/:workspaceId/users/import/excel?dryRun=true` | Importer des utilisateurs depuis Excel/CSV multipart |
 | POST | `/workspaces/:workspaceId/dms` | Créer ou récupérer une conversation directe |
 
 ### Users

@@ -8,6 +8,72 @@ import { failAction, successAction } from '../../utils/action.dto';
 export class RoomsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private formatRoomForUser(
+    room: {
+      id: string;
+      name: string;
+      description: string | null;
+      isPrivate?: boolean;
+      isDirectMessage: boolean;
+      createdAt?: Date;
+      members: Array<{
+        userId: string;
+        user: {
+          id: string;
+          userName: string;
+          avatar: string | null;
+          isOnline: boolean;
+        };
+      }>;
+      messages?: Array<{
+        content: string;
+        senderId: string;
+        sender: {
+          userName: string;
+        };
+      }>;
+    },
+    userId: string,
+  ) {
+    let displayName = room.name;
+    let otherUser: {
+      id: string;
+      userName: string;
+      avatar: string | null;
+      isOnline: boolean;
+    } | null = null;
+
+    if (room.isDirectMessage) {
+      const otherMember = room.members.find(
+        (member) => member.userId !== userId,
+      );
+      if (otherMember) {
+        displayName = otherMember.user.userName;
+        otherUser = otherMember.user;
+      }
+    }
+
+    let lastMessage: string | null = null;
+    const lastMsg = room.messages?.[0];
+    if (lastMsg) {
+      const senderName =
+        lastMsg.senderId === userId ? 'Vous' : lastMsg.sender.userName;
+      lastMessage = `${senderName}: ${lastMsg.content}`;
+    }
+
+    return {
+      id: room.id,
+      name: room.name,
+      displayName,
+      description: room.description,
+      isPrivate: room.isPrivate,
+      isDirectMessage: room.isDirectMessage,
+      createdAt: room.createdAt,
+      otherUser,
+      lastMessage,
+    };
+  }
+
   private canManageRoom(role?: string) {
     return role === 'OWNER' || role === 'ADMIN';
   }
@@ -132,33 +198,78 @@ export class RoomsService {
       }
 
       const skip = (page - 1) * page_size;
-      const where = {
-        workspaceId,
-        ...(search?.trim() && {
-          OR: [
-            { name: { contains: search, mode: 'insensitive' as const } },
-            { description: { contains: search, mode: 'insensitive' as const } },
-          ],
-        }),
-        ...(isDirectMessage !== undefined && {
-          isDirectMessage: isDirectMessage,
-        }),
-      };
 
-      const content = await this.prisma.room.findMany({
+      const memberships = await this.prisma.roomMember.findMany({
         skip,
         take: page_size,
-        where,
-        select: {
-          id: true,
-          name: true,
-          description: true,
-          isPrivate: true,
-          isDirectMessage: true,
-          createdAt: true,
+        where: {
+          userId,
+          isActive: true,
+          room: {
+            workspaceId,
+            isActive: true,
+            ...(isDirectMessage !== undefined && {
+              isDirectMessage,
+            }),
+          },
         },
-        orderBy: { createdAt: 'asc' as const },
+        select: {
+          room: {
+            select: {
+              id: true,
+              name: true,
+              description: true,
+              isPrivate: true,
+              isDirectMessage: true,
+              createdAt: true,
+              members: {
+                where: { isActive: true },
+                select: {
+                  userId: true,
+                  user: {
+                    select: {
+                      id: true,
+                      userName: true,
+                      avatar: true,
+                      isOnline: true,
+                    },
+                  },
+                },
+              },
+              messages: {
+                where: { isDeleted: false },
+                select: {
+                  content: true,
+                  senderId: true,
+                  sender: {
+                    select: {
+                      userName: true,
+                    },
+                  },
+                },
+                orderBy: {
+                  createdAt: 'desc' as const,
+                },
+                take: 1,
+              },
+            },
+          },
+        },
+        orderBy: { joinedAt: 'asc' as const },
       });
+
+      let content = memberships.map((membership) =>
+        this.formatRoomForUser(membership.room, userId),
+      );
+
+      if (search?.trim()) {
+        const searchLower = search.toLowerCase();
+        content = content.filter((room) =>
+          room.isDirectMessage
+            ? room.displayName.toLowerCase().includes(searchLower)
+            : room.name.toLowerCase().includes(searchLower),
+        );
+      }
 
       return successAction(content, true, 'Room: find successfully!');
     } catch (e) {
@@ -184,14 +295,34 @@ export class RoomsService {
           id: true,
           name: true,
           description: true,
+          isPrivate: true,
           isDirectMessage: true,
+          createdAt: true,
+          members: {
+            where: { isActive: true },
+            select: {
+              userId: true,
+              user: {
+                select: {
+                  id: true,
+                  userName: true,
+                  avatar: true,
+                  isOnline: true,
+                },
+              },
+            },
+          },
         },
       });
 
       if (!recoveredRoom) {
         return failAction(null, false, 'Room:not found !');
       }
-      return successAction(recoveredRoom, true, 'Room:find successfuly !');
+      return successAction(
+        userId ? this.formatRoomForUser(recoveredRoom, userId) : recoveredRoom,
+        true,
+        'Room:find successfuly !',
+      );
     } catch (e) {
       console.error(e);
       return failAction(null, false, `Error during action: ${e}`);
@@ -260,8 +391,10 @@ export class RoomsService {
       const rooms = await this.prisma.roomMember.findMany({
         where: {
           userId: userId,
+          isActive: true,
           room: {
             workspaceId,
+            isActive: true,
           },
           ...(isDirectMessage !== undefined && {
             room: {
@@ -278,6 +411,7 @@ export class RoomsService {
               description: true,
               isDirectMessage: true,
               members: {
+                where: { isActive: true },
                 select: {
                   userId: true,
                   user: {
@@ -311,45 +445,9 @@ export class RoomsService {
       });
 
       // Pour les DMs, remplacer le nom de la room par le nom de l'autre utilisateur
-      let roomsWithDisplayName = rooms.map((roomMember) => {
-        let displayName = roomMember.room.name;
-        let otherUser: {
-          id: string;
-          userName: string;
-          avatar: string | null;
-          isOnline: boolean;
-        } | null = null;
-
-        if (roomMember.room.isDirectMessage) {
-          // Trouver l'autre utilisateur (pas celui qui fait la requête)
-          const otherMember = roomMember.room.members.find(
-            (member) => member.userId !== userId,
-          );
-          if (otherMember) {
-            displayName = otherMember.user.userName;
-            otherUser = otherMember.user;
-          }
-        }
-
-        // Construire le dernier message au format "username: message"
-        let lastMessage: string | null = null;
-        if (roomMember.room.messages.length > 0) {
-          const lastMsg = roomMember.room.messages[0];
-          const senderName =
-            lastMsg.senderId === userId ? 'Vous' : lastMsg.sender.userName;
-          lastMessage = `${senderName}: ${lastMsg.content}`;
-        }
-
-        return {
-          id: roomMember.room.id,
-          name: roomMember.room.name,
-          displayName: displayName,
-          description: roomMember.room.description,
-          isDirectMessage: roomMember.room.isDirectMessage,
-          otherUser: otherUser,
-          lastMessage: lastMessage,
-        };
-      });
+      let roomsWithDisplayName = rooms.map((roomMember) =>
+        this.formatRoomForUser(roomMember.room, userId),
+      );
 
       // Appliquer le filtre de recherche
       if (search?.trim()) {

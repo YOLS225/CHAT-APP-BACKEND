@@ -6,14 +6,22 @@ import {
   Post,
   Query,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request } from 'express';
-import { ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../guard/jwt.guard';
 import { CreateDirectMessageDto } from '../../business-logic/workspaces/dto/create-direct-message.dto';
 import { CreateWorkspaceDto } from '../../business-logic/workspaces/dto/create-workspace.dto';
-import { ImportUsersDto } from '../../business-logic/workspaces/dto/import-users.dto';
 import { WorkspacesService } from '../../business-logic/workspaces/workspaces.service';
 
 @Controller('workspaces')
@@ -58,17 +66,35 @@ export class WorkspacesController {
     );
   }
 
-  @Post(':workspaceId/users/import')
-  @ApiOperation({ summary: 'Import workspace users from CSV text' })
-  importUsers(
+  @Post(':workspaceId/users/import/excel')
+  @ApiOperation({ summary: 'Import workspace users from Excel or CSV file' })
+  @ApiConsumes('multipart/form-data')
+  @ApiQuery({ name: 'dryRun', required: false, type: Boolean })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'Excel/CSV file with columns: email, userName, role',
+        },
+      },
+      required: ['file'],
+    },
+  })
+  @UseInterceptors(FileInterceptor('file'))
+  importUsersFromExcel(
     @Param('workspaceId') workspaceId: string,
-    @Body() dto: ImportUsersDto,
+    @Query('dryRun') dryRun: string | undefined,
+    @UploadedFile() file: Express.Multer.File | undefined,
     @Req() request: Request,
   ) {
-    return this.workspacesService.importUsers(
+    return this.workspacesService.importUsersFromSpreadsheet(
       workspaceId,
       this.getAuthenticatedUserId(request),
-      dto,
+      file,
+      dryRun === 'true',
     );
   }
 

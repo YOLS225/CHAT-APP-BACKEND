@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { randomBytes } from 'crypto';
+import * as XLSX from 'xlsx';
 import {
   Prisma,
   RoomRole,
@@ -9,7 +10,6 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { failAction, successAction } from '../../utils/action.dto';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
-import { ImportUsersDto } from './dto/import-users.dto';
 
 type CsvUserRow = {
   email: string;
@@ -145,6 +145,17 @@ export class WorkspacesService {
   private buildInvitationUrl(token: string) {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     return `${frontendUrl}/accept-invitation?token=${token}`;
+  }
+
+  private spreadsheetBufferToCsv(file: Express.Multer.File) {
+    const workbook = XLSX.read(file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    if (!sheetName) {
+      return null;
+    }
+
+    const worksheet = workbook.Sheets[sheetName];
+    return XLSX.utils.sheet_to_csv(worksheet);
   }
 
   async create(dto: CreateWorkspaceDto, ownerId: string) {
@@ -287,10 +298,11 @@ export class WorkspacesService {
     }
   }
 
-  async importUsers(
+  private async importUsersFromCsv(
     workspaceId: string,
     actorUserId: string,
-    dto: ImportUsersDto,
+    csv: string,
+    dryRun?: boolean,
   ) {
     try {
       const actor = await this.findActiveWorkspaceMember(
@@ -305,7 +317,7 @@ export class WorkspacesService {
         return failAction(null, false, 'Insufficient permissions');
       }
 
-      const { rows, errors } = this.parseUsersCsv(dto.csv);
+      const { rows, errors } = this.parseUsersCsv(csv);
       if (errors.length > 0) {
         return failAction({ errors }, false, 'CSV validation failed');
       }
@@ -373,7 +385,7 @@ export class WorkspacesService {
             : 'create_invited_user',
       }));
 
-      if (dto.dryRun) {
+      if (dryRun) {
         return successAction({ preview }, true, 'CSV import preview');
       }
 
@@ -447,6 +459,49 @@ export class WorkspacesService {
       console.error(e);
       return failAction(null, false, `Error during action: ${e}`);
     }
+  }
+
+  async importUsersFromSpreadsheet(
+    workspaceId: string,
+    actorUserId: string,
+    file: Express.Multer.File | undefined,
+    dryRun?: boolean,
+  ) {
+    if (!file) {
+      return failAction(null, false, 'No file provided');
+    }
+
+    const allowedMimeTypes = new Set([
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel',
+      'text/csv',
+      'application/csv',
+      'text/plain',
+    ]);
+
+    const allowedExtensions = /\.(xlsx|xls|csv)$/i;
+    if (
+      !allowedMimeTypes.has(file.mimetype) &&
+      !allowedExtensions.test(file.originalname)
+    ) {
+      return failAction(
+        null,
+        false,
+        'Invalid file type. Expected .xlsx, .xls or .csv',
+      );
+    }
+
+    const maxSize = 2 * 1024 * 1024;
+    if (file.size > maxSize) {
+      return failAction(null, false, 'File is too large. Max size is 2MB');
+    }
+
+    const csv = this.spreadsheetBufferToCsv(file);
+    if (!csv) {
+      return failAction(null, false, 'Spreadsheet is empty');
+    }
+
+    return this.importUsersFromCsv(workspaceId, actorUserId, csv, dryRun);
   }
 
   async createDirectMessage(
