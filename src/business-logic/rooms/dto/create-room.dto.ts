@@ -8,7 +8,6 @@ import {
 } from 'class-validator';
 
 export class CreateRoomDto {
-  id?: string;
   @ApiProperty({ example: 'string' })
   @IsString()
   @IsNotEmpty()
@@ -24,15 +23,6 @@ export class CreateRoomDto {
   @IsOptional()
   @IsBoolean()
   isPrivate?: boolean;
-  @ApiProperty({ example: true })
-  @IsOptional()
-  @IsBoolean()
-  isDeleted?: boolean;
-  createdAt?: Date;
-  // @ApiProperty({ type: () => [RoomMember] })
-  // members: RoomMember[];
-  // @ApiProperty({ type: () => [Message] })
-  // messages: Message[];
   @ApiProperty({ example: true })
   @IsOptional()
   @IsBoolean()

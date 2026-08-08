@@ -1,19 +1,19 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { MessageType } from '../../../utils/types';
 import {
+  ArrayUnique,
+  IsArray,
   IsEnum,
-  IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
 } from 'class-validator';
 
 export class CreateMessageDto {
-  id?: string;
-  @ApiProperty({ example: 'string' })
+  @ApiPropertyOptional({ example: 'string' })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  content: string;
+  content?: string;
   @ApiProperty({ example: 'string' })
   @IsUUID()
   roomId: string;
@@ -23,5 +23,11 @@ export class CreateMessageDto {
   @IsOptional()
   @IsEnum(MessageType)
   type?: MessageType;
-  createdAt?: Date;
+
+  @ApiPropertyOptional({ example: ['attachment-id'] })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsUUID(undefined, { each: true })
+  attachmentIds?: string[];
 }

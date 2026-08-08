@@ -1,7 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Queue, Worker } from 'bullmq';
 import { randomBytes } from 'crypto';
 import * as XLSX from 'xlsx';
 import {
+  ImportJobStatus,
+  NotificationType,
   Prisma,
   RoomRole,
   PlatformRole,
@@ -11,7 +14,9 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { failAction, successAction } from '../../utils/action.dto';
 import { MailService } from '../mail/mail.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
+import { InviteWorkspaceUserDto } from './dto/invite-workspace-user.dto';
 import { UpdateWorkspaceMemberDto } from './dto/update-workspace-member.dto';
 
 type CsvUserRow = {
@@ -21,12 +26,99 @@ type CsvUserRow = {
   line: number;
 };
 
+type WorkspaceImportJobData = {
+  importJobId: string;
+  workspaceId: string;
+  actorUserId: string;
+  csv: string;
+  dryRun: boolean;
+};
+
+type ImportUserResult = {
+  email?: string;
+  userName?: string;
+  userId?: string;
+  action?: string;
+  invitationUrl?: string;
+  emailSent?: boolean;
+  emailSkipped?: boolean;
+  emailError?: string;
+};
+
+type ImportActionData = {
+  preview?: ImportUserResult[];
+  imported?: ImportUserResult[];
+  errors?: string[];
+};
+
 @Injectable()
-export class WorkspacesService {
+export class WorkspacesService implements OnModuleInit, OnModuleDestroy {
+  private readonly importQueueName = 'workspace-user-imports';
+  private importQueue?: Queue<WorkspaceImportJobData>;
+  private importWorker?: Worker<WorkspaceImportJobData>;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
+    private readonly notificationsService: NotificationsService,
   ) {}
+
+  onModuleInit() {
+    const connection = this.getRedisConnection();
+    if (!connection) {
+      console.warn('REDIS_URL is not configured. Import worker is disabled.');
+      return;
+    }
+
+    this.importQueue = new Queue<WorkspaceImportJobData>(this.importQueueName, {
+      connection,
+    });
+    this.importWorker = new Worker<WorkspaceImportJobData>(
+      this.importQueueName,
+      async (job) => this.processImportJob(job.data),
+      { connection },
+    );
+
+    this.importWorker.on('failed', (job, error) => {
+      console.error(`Import job ${job?.data.importJobId} failed`, error);
+    });
+  }
+
+  async onModuleDestroy() {
+    await this.importWorker?.close();
+    await this.importQueue?.close();
+  }
+
+  private getRedisConnection() {
+    const redisUrl = process.env.REDIS_URL;
+    if (!redisUrl) return null;
+
+    const url = new URL(redisUrl);
+    return {
+      host: url.hostname,
+      port: Number(url.port || 6379),
+      username: url.username ? decodeURIComponent(url.username) : undefined,
+      password: url.password ? decodeURIComponent(url.password) : undefined,
+      tls: url.protocol === 'rediss:' ? {} : undefined,
+      maxRetriesPerRequest: null,
+    };
+  }
+
+  private getImportQueue() {
+    if (!this.importQueue) {
+      const connection = this.getRedisConnection();
+      if (!connection) {
+        throw new Error('REDIS_URL is required to enqueue import jobs');
+      }
+
+      this.importQueue = new Queue<WorkspaceImportJobData>(
+        this.importQueueName,
+        { connection },
+      );
+    }
+
+    return this.importQueue;
+  }
 
   private canManageWorkspace(role?: WorkspaceRole) {
     return role === WorkspaceRole.OWNER || role === WorkspaceRole.ADMIN;
@@ -79,6 +171,10 @@ export class WorkspacesService {
 
     values.push(current.trim());
     return values;
+  }
+
+  private toCsvValue(value: string) {
+    return `"${value.replace(/"/g, '""')}"`;
   }
 
   private parseUsersCsv(csv: string) {
@@ -421,6 +517,174 @@ export class WorkspacesService {
     });
   }
 
+  async inviteUser(
+    workspaceId: string,
+    actorUserId: string,
+    dto: InviteWorkspaceUserDto,
+  ) {
+    const actor = await this.findActiveWorkspaceMember(
+      workspaceId,
+      actorUserId,
+    );
+    if (
+      !actor ||
+      actor.status !== WorkspaceMemberStatus.ACTIVE ||
+      !this.canManageWorkspace(actor.role)
+    ) {
+      return failAction(null, false, 'Insufficient permissions');
+    }
+
+    if (
+      dto.role === WorkspaceRole.OWNER &&
+      actor.role !== WorkspaceRole.OWNER
+    ) {
+      return failAction(null, false, 'Only an owner can invite another owner');
+    }
+
+    const csv = [
+      'email,userName,role',
+      [
+        this.toCsvValue(dto.email.toLowerCase()),
+        this.toCsvValue(dto.userName),
+        this.toCsvValue(dto.role || WorkspaceRole.MEMBER),
+      ].join(','),
+    ].join('\n');
+
+    const result = await this.importUsersFromCsv(
+      workspaceId,
+      actorUserId,
+      csv,
+      false,
+    );
+
+    if (!result.success) return result;
+
+    return successAction(result.data, true, 'Workspace user invited');
+  }
+
+  private buildImportCounters(data?: ImportActionData) {
+    const imported = data?.imported || [];
+    const preview = data?.preview || [];
+    const errors = data?.errors || [];
+    const rows = imported.length > 0 ? imported : preview;
+
+    return {
+      totalRows: rows.length + errors.length,
+      validRows: rows.length,
+      errorRows: errors.length,
+      invitationsCreated: imported.filter((row) => row.invitationUrl).length,
+      emailsSent: imported.filter((row) => row.emailSent).length,
+      emailsFailed: imported.filter(
+        (row) => row.invitationUrl && !row.emailSent && !row.emailSkipped,
+      ).length,
+    };
+  }
+
+  private async processImportJob(data: WorkspaceImportJobData) {
+    await this.prisma.importJob.update({
+      where: { id: data.importJobId },
+      data: {
+        status: ImportJobStatus.PROCESSING,
+        startedAt: new Date(),
+        error: null,
+      },
+    });
+
+    const result = await this.importUsersFromCsv(
+      data.workspaceId,
+      data.actorUserId,
+      data.csv,
+      data.dryRun,
+    );
+    const resultData = result.data as ImportActionData | undefined;
+    const counters = this.buildImportCounters(resultData);
+
+    await this.prisma.importJob.update({
+      where: { id: data.importJobId },
+      data: {
+        status: result.success
+          ? ImportJobStatus.COMPLETED
+          : ImportJobStatus.FAILED,
+        ...counters,
+        result: (resultData || Prisma.JsonNull) as Prisma.InputJsonValue,
+        error: result.success ? null : result.message || 'Import failed',
+        completedAt: new Date(),
+      },
+    });
+
+    await this.notificationsService.create({
+      recipientId: data.actorUserId,
+      workspaceId: data.workspaceId,
+      type: result.success
+        ? NotificationType.IMPORT_COMPLETED
+        : NotificationType.IMPORT_FAILED,
+      title: result.success ? 'Import terminé' : 'Import échoué',
+      body: result.success
+        ? 'L’import des utilisateurs est terminé.'
+        : result.message || 'L’import des utilisateurs a échoué.',
+      metadata: {
+        importJobId: data.importJobId,
+        dryRun: data.dryRun,
+        ...counters,
+      },
+    });
+  }
+
+  async listImportJobs(workspaceId: string, actorUserId: string) {
+    try {
+      const actor = await this.findActiveWorkspaceMember(
+        workspaceId,
+        actorUserId,
+      );
+      if (!actor || actor.status !== WorkspaceMemberStatus.ACTIVE) {
+        return failAction(
+          null,
+          false,
+          'User is not a member of this workspace',
+        );
+      }
+
+      const jobs = await this.prisma.importJob.findMany({
+        where: { workspaceId },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      });
+
+      return successAction(jobs, true, 'Import jobs found');
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
+    }
+  }
+
+  async getImportJob(workspaceId: string, jobId: string, actorUserId: string) {
+    try {
+      const actor = await this.findActiveWorkspaceMember(
+        workspaceId,
+        actorUserId,
+      );
+      if (!actor || actor.status !== WorkspaceMemberStatus.ACTIVE) {
+        return failAction(
+          null,
+          false,
+          'User is not a member of this workspace',
+        );
+      }
+
+      const job = await this.prisma.importJob.findFirst({
+        where: { id: jobId, workspaceId },
+      });
+      if (!job) {
+        return failAction(null, false, 'Import job not found');
+      }
+
+      return successAction(job, true, 'Import job found');
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
+    }
+  }
+
   private async importUsersFromCsv(
     workspaceId: string,
     actorUserId: string,
@@ -574,6 +838,19 @@ export class WorkspacesService {
             },
           });
 
+          await tx.notification.create({
+            data: {
+              recipientId: user.id,
+              workspaceId,
+              type: NotificationType.USER_INVITED,
+              title: 'Invitation workspace',
+              body: `Vous avez été invité dans ${workspace.name}.`,
+              metadata: {
+                workspaceId,
+              },
+            },
+          });
+
           results.push({
             email: row.email,
             userName: row.userName,
@@ -641,41 +918,108 @@ export class WorkspacesService {
     file: Express.Multer.File | undefined,
     dryRun?: boolean,
   ) {
-    if (!file) {
-      return failAction(null, false, 'No file provided');
-    }
+    try {
+      if (!file) {
+        return failAction(null, false, 'No file provided');
+      }
 
-    const allowedMimeTypes = new Set([
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'application/vnd.ms-excel',
-      'text/csv',
-      'application/csv',
-      'text/plain',
-    ]);
-
-    const allowedExtensions = /\.(xlsx|xls|csv)$/i;
-    if (
-      !allowedMimeTypes.has(file.mimetype) &&
-      !allowedExtensions.test(file.originalname)
-    ) {
-      return failAction(
-        null,
-        false,
-        'Invalid file type. Expected .xlsx, .xls or .csv',
+      const actor = await this.findActiveWorkspaceMember(
+        workspaceId,
+        actorUserId,
       );
-    }
+      if (
+        !actor ||
+        actor.status !== WorkspaceMemberStatus.ACTIVE ||
+        !this.canManageWorkspace(actor.role)
+      ) {
+        return failAction(null, false, 'Insufficient permissions');
+      }
 
-    const maxSize = 2 * 1024 * 1024;
-    if (file.size > maxSize) {
-      return failAction(null, false, 'File is too large. Max size is 2MB');
-    }
+      const allowedMimeTypes = new Set([
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.ms-excel',
+        'text/csv',
+        'application/csv',
+        'text/plain',
+      ]);
 
-    const csv = this.spreadsheetBufferToCsv(file);
-    if (!csv) {
-      return failAction(null, false, 'Spreadsheet is empty');
-    }
+      const allowedExtensions = /\.(xlsx|xls|csv)$/i;
+      if (
+        !allowedMimeTypes.has(file.mimetype) &&
+        !allowedExtensions.test(file.originalname)
+      ) {
+        return failAction(
+          null,
+          false,
+          'Invalid file type. Expected .xlsx, .xls or .csv',
+        );
+      }
 
-    return this.importUsersFromCsv(workspaceId, actorUserId, csv, dryRun);
+      const maxSize = 2 * 1024 * 1024;
+      if (file.size > maxSize) {
+        return failAction(null, false, 'File is too large. Max size is 2MB');
+      }
+
+      const csv = this.spreadsheetBufferToCsv(file);
+      if (!csv) {
+        return failAction(null, false, 'Spreadsheet is empty');
+      }
+
+      const importJob = await this.prisma.importJob.create({
+        data: {
+          workspaceId,
+          createdById: actorUserId,
+          dryRun: Boolean(dryRun),
+          fileName: file.originalname,
+        },
+      });
+
+      try {
+        await this.getImportQueue().add(
+          'workspace-users-import',
+          {
+            importJobId: importJob.id,
+            workspaceId,
+            actorUserId,
+            csv,
+            dryRun: Boolean(dryRun),
+          },
+          {
+            attempts: 3,
+            backoff: { type: 'exponential', delay: 5000 },
+            removeOnComplete: 100,
+            removeOnFail: 100,
+          },
+        );
+      } catch (error) {
+        await this.prisma.importJob.update({
+          where: { id: importJob.id },
+          data: {
+            status: ImportJobStatus.FAILED,
+            error:
+              error instanceof Error
+                ? error.message
+                : 'Unable to enqueue import job',
+            completedAt: new Date(),
+          },
+        });
+        throw error;
+      }
+
+      return successAction(
+        {
+          jobId: importJob.id,
+          status: importJob.status,
+          dryRun: importJob.dryRun,
+          fileName: importJob.fileName,
+        },
+        true,
+        'Import job queued',
+      );
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
+    }
   }
 
   async createDirectMessage(

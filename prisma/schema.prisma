@@ -15,16 +15,16 @@ datasource db {
 }
 
 model User {
-  id        String     @id @default(uuid())
-  userName  String     @unique
-  email     String     @unique
-  password  String?
-  avatar    String?
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  isOnline  Boolean    @default(false)
-  lastSeen  DateTime   @default(now())
-  status    UserStatus @default(ACTIVE)
+  id           String       @id @default(uuid())
+  userName     String       @unique
+  email        String       @unique
+  password     String?
+  avatar       String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  isOnline     Boolean      @default(false)
+  lastSeen     DateTime     @default(now())
+  status       UserStatus   @default(ACTIVE)
   platformRole PlatformRole @default(USER)
 
   // Relations
@@ -32,6 +32,9 @@ model User {
   roomMemberships      RoomMember[]
   workspaceMemberships WorkspaceMember[]
   invitationTokens     InvitationToken[]
+  createdImportJobs    ImportJob[]        @relation("ImportJobCreator")
+  notifications        Notification[]     @relation("NotificationRecipient")
+  uploadedAttachments  Attachment[]       @relation("AttachmentUploader")
 
   @@map("users")
 }
@@ -45,8 +48,38 @@ model Workspace {
   members          WorkspaceMember[]
   rooms            Room[]
   invitationTokens InvitationToken[]
+  importJobs       ImportJob[]
+  notifications    Notification[]
 
   @@map("workspaces")
+}
+
+model ImportJob {
+  id                 String          @id @default(uuid())
+  workspaceId        String
+  createdById        String
+  status             ImportJobStatus @default(PENDING)
+  dryRun             Boolean         @default(false)
+  fileName           String?
+  totalRows          Int             @default(0)
+  validRows          Int             @default(0)
+  errorRows          Int             @default(0)
+  invitationsCreated Int             @default(0)
+  emailsSent         Int             @default(0)
+  emailsFailed       Int             @default(0)
+  result             Json?
+  error              String?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy User      @relation("ImportJobCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
+  @@index([createdById])
+  @@map("import_jobs")
 }
 
 model WorkspaceMember {
@@ -95,6 +128,7 @@ model Message {
 
   roomId String
   room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  attachments Attachment[]
 
   // Métadonnées
   editedAt  DateTime?
@@ -103,6 +137,48 @@ model Message {
   @@index([roomId, createdAt])
   @@index([senderId])
   @@map("messages")
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  recipientId String
+  workspaceId String?
+  type        NotificationType
+  title       String
+  body        String
+  metadata    Json?
+  readAt      DateTime?
+  createdAt   DateTime         @default(now())
+
+  recipient User       @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId, readAt, createdAt])
+  @@index([workspaceId])
+  @@map("notifications")
+}
+
+model Attachment {
+  id           String           @id @default(uuid())
+  key          String           @unique
+  url          String?
+  fileName     String
+  mimeType     String
+  size         Int
+  kind         AttachmentKind
+  status       AttachmentStatus @default(PENDING)
+  durationMs   Int?
+  uploadedById String
+  messageId    String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  uploadedBy User     @relation("AttachmentUploader", fields: [uploadedById], references: [id], onDelete: Cascade)
+  message    Message? @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([uploadedById, status])
+  @@index([messageId])
+  @@map("attachments")
 }
 
 model Room {
@@ -164,6 +240,7 @@ enum MessageType {
   TEXT
   IMAGE
   FILE
+  AUDIO
   SYSTEM // Messages automatiques (join, leave, etc.)
 }
 
@@ -184,4 +261,31 @@ enum WorkspaceMemberStatus {
   ACTIVE
   INVITED
   DISABLED
+}
+
+enum ImportJobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum NotificationType {
+  USER_INVITED
+  ROOM_MEMBER_ADDED
+  ROOM_MEMBER_REMOVED
+  IMPORT_COMPLETED
+  IMPORT_FAILED
+  DM_MESSAGE
+}
+
+enum AttachmentKind {
+  IMAGE
+  DOCUMENT
+  AUDIO
+}
+
+enum AttachmentStatus {
+  PENDING
+  ATTACHED
 }

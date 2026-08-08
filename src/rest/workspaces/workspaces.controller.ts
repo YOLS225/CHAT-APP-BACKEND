@@ -24,6 +24,7 @@ import {
 import { JwtAuthGuard } from '../../guard/jwt.guard';
 import { CreateDirectMessageDto } from '../../business-logic/workspaces/dto/create-direct-message.dto';
 import { CreateWorkspaceDto } from '../../business-logic/workspaces/dto/create-workspace.dto';
+import { InviteWorkspaceUserDto } from '../../business-logic/workspaces/dto/invite-workspace-user.dto';
 import { UpdateWorkspaceMemberDto } from '../../business-logic/workspaces/dto/update-workspace-member.dto';
 import { WorkspacesService } from '../../business-logic/workspaces/workspaces.service';
 
@@ -69,6 +70,32 @@ export class WorkspacesController {
     );
   }
 
+  @Get(':workspaceId/import-jobs')
+  @ApiOperation({ summary: 'Get recent workspace user import jobs' })
+  listImportJobs(
+    @Param('workspaceId') workspaceId: string,
+    @Req() request: Request,
+  ) {
+    return this.workspacesService.listImportJobs(
+      workspaceId,
+      this.getAuthenticatedUserId(request),
+    );
+  }
+
+  @Get(':workspaceId/import-jobs/:jobId')
+  @ApiOperation({ summary: 'Get workspace user import job status' })
+  getImportJob(
+    @Param('workspaceId') workspaceId: string,
+    @Param('jobId') jobId: string,
+    @Req() request: Request,
+  ) {
+    return this.workspacesService.getImportJob(
+      workspaceId,
+      jobId,
+      this.getAuthenticatedUserId(request),
+    );
+  }
+
   @Patch(':workspaceId/users/:userId')
   @ApiOperation({ summary: 'Update workspace member role or status' })
   updateMember(
@@ -96,6 +123,20 @@ export class WorkspacesController {
       workspaceId,
       userId,
       this.getAuthenticatedUserId(request),
+    );
+  }
+
+  @Post(':workspaceId/users/invite')
+  @ApiOperation({ summary: 'Invite one user to a workspace' })
+  inviteUser(
+    @Param('workspaceId') workspaceId: string,
+    @Body() dto: InviteWorkspaceUserDto,
+    @Req() request: Request,
+  ) {
+    return this.workspacesService.inviteUser(
+      workspaceId,
+      this.getAuthenticatedUserId(request),
+      dto,
     );
   }
 

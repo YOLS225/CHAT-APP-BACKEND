@@ -3,11 +3,16 @@ import { CreateRoomMemberDto } from './dto/create-room-member.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { failAction, successAction } from '../../utils/action.dto';
 import { UpdateMemberRoleDto } from './dto/update-room-member.dto';
-import { RoomRole } from '../../../generated/prisma';
+import { NotificationType, RoomRole } from '../../../generated/prisma';
+import { AddRoomMemberDto } from './dto/add-room-member.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class RoomMembersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   private canManageMembers(role?: RoomRole) {
     return role === RoomRole.OWNER || role === RoomRole.ADMIN;
@@ -35,11 +40,23 @@ export class RoomMembersService {
     try {
       const room = await this.prisma.room.findUnique({
         where: { id: createRoomMemberDto.roomId },
-        select: { workspaceId: true },
+        select: { workspaceId: true, isPrivate: true, isDirectMessage: true },
       });
 
       if (!room) {
         return failAction(null, false, 'Room:not found !');
+      }
+
+      if (room.isDirectMessage) {
+        return failAction(null, false, 'Direct messages cannot be joined');
+      }
+
+      if (room.isPrivate) {
+        return failAction(
+          null,
+          false,
+          'Private rooms require an owner/admin invitation',
+        );
       }
 
       const workspaceMember = await this.prisma.workspaceMember.findUnique({
@@ -114,6 +131,116 @@ export class RoomMembersService {
     }
   }
 
+  async addMember(roomId: string, actorUserId: string, dto: AddRoomMemberDto) {
+    try {
+      const room = await this.prisma.room.findUnique({
+        where: { id: roomId },
+        select: {
+          id: true,
+          workspaceId: true,
+          isDirectMessage: true,
+          isActive: true,
+        },
+      });
+      if (!room || !room.isActive) {
+        return failAction(null, false, 'Room:not found !');
+      }
+
+      if (room.isDirectMessage) {
+        return failAction(null, false, 'Direct message members are locked');
+      }
+
+      const actor = await this.findActiveMember(actorUserId, roomId);
+      if (!actor?.isActive || !this.canManageMembers(actor.role)) {
+        return failAction(null, false, 'Insufficient permissions');
+      }
+
+      const workspaceMember = await this.prisma.workspaceMember.findUnique({
+        where: {
+          workspaceId_userId: {
+            workspaceId: room.workspaceId,
+            userId: dto.userId,
+          },
+        },
+        select: { status: true },
+      });
+
+      if (!workspaceMember || workspaceMember.status !== 'ACTIVE') {
+        return failAction(
+          null,
+          false,
+          'Target user is not active in this workspace',
+        );
+      }
+
+      const existingMember = await this.prisma.roomMember.findUnique({
+        where: {
+          userId_roomId: {
+            userId: dto.userId,
+            roomId,
+          },
+        },
+      });
+
+      if (existingMember) {
+        const updated = await this.prisma.roomMember.update({
+          where: { id: existingMember.id },
+          data: {
+            isActive: true,
+            role: dto.role || existingMember.role,
+          },
+          select: {
+            id: true,
+            userId: true,
+            roomId: true,
+            role: true,
+            isActive: true,
+            joinedAt: true,
+          },
+        });
+        await this.notificationsService.create({
+          recipientId: dto.userId,
+          workspaceId: room.workspaceId,
+          type: NotificationType.ROOM_MEMBER_ADDED,
+          title: 'Ajout à une room',
+          body: 'Vous avez été ajouté à une room.',
+          metadata: { roomId },
+        });
+        return successAction(updated, true, 'Room member updated');
+      }
+
+      const created = await this.prisma.roomMember.create({
+        data: {
+          userId: dto.userId,
+          roomId,
+          role: dto.role || RoomRole.MEMBER,
+        },
+        select: {
+          id: true,
+          userId: true,
+          roomId: true,
+          role: true,
+          isActive: true,
+          joinedAt: true,
+        },
+      });
+
+      await this.notificationsService.create({
+        recipientId: dto.userId,
+        workspaceId: room.workspaceId,
+        type: NotificationType.ROOM_MEMBER_ADDED,
+        title: 'Ajout à une room',
+        body: 'Vous avez été ajouté à une room.',
+        metadata: { roomId },
+      });
+
+      return successAction(created, true, 'Room member added');
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
+    }
+  }
+
   async findAll(page: number, page_size: number) {
     try {
       const skip = (page - 1) * page_size;
@@ -162,9 +289,19 @@ export class RoomMembersService {
     try {
       const target = await this.prisma.roomMember.findUnique({
         where: { id: memberId },
-        select: { id: true, userId: true, roomId: true, role: true },
+        select: {
+          id: true,
+          userId: true,
+          roomId: true,
+          role: true,
+          room: { select: { isDirectMessage: true } },
+        },
       });
       if (!target) return failAction(null, false, 'Membre introuvable');
+
+      if (target.room.isDirectMessage) {
+        return failAction(null, false, 'Direct message members are locked');
+      }
 
       const actor = await this.findActiveMember(actorUserId, target.roomId);
       if (!actor?.isActive || !this.canManageMembers(actor.role)) {
@@ -199,8 +336,15 @@ export class RoomMembersService {
     try {
       const target = await this.prisma.roomMember.findFirst({
         where: { id: memberId },
+        include: {
+          room: { select: { isDirectMessage: true, workspaceId: true } },
+        },
       });
       if (!target) return failAction(null, false, 'Membre introuvable');
+
+      if (target.room.isDirectMessage) {
+        return failAction(null, false, 'Direct message members are locked');
+      }
 
       const actor = await this.findActiveMember(actorUserId, target.roomId);
       if (!actor?.isActive || !this.canManageMembers(actor.role)) {
@@ -212,6 +356,14 @@ export class RoomMembersService {
       }
 
       await this.prisma.roomMember.delete({ where: { id: memberId } });
+      await this.notificationsService.create({
+        recipientId: target.userId,
+        workspaceId: target.room.workspaceId,
+        type: NotificationType.ROOM_MEMBER_REMOVED,
+        title: 'Retrait d’une room',
+        body: 'Vous avez été retiré d’une room.',
+        metadata: { roomId: target.roomId },
+      });
       return successAction(null, true, 'Membre exclu avec succès');
     } catch (e) {
       console.error(e);
@@ -230,7 +382,15 @@ export class RoomMembersService {
         );
       }
 
-      if (recoveredMember.success) {
+      if (recoveredMember.success && recoveredMember.data) {
+        const room = await this.prisma.room.findUnique({
+          where: { id: recoveredMember.data.roomId },
+          select: { isDirectMessage: true },
+        });
+        if (room?.isDirectMessage) {
+          return failAction(null, false, 'Direct messages cannot be left');
+        }
+
         const memberUpdated = await this.prisma.roomMember.update({
           where: { id: id },
           data: {
@@ -260,6 +420,14 @@ export class RoomMembersService {
         return failAction(null, false, 'Member:not found !');
       }
 
+      const room = await this.prisma.room.findUnique({
+        where: { id: recoveredMember.data.roomId },
+        select: { isDirectMessage: true, workspaceId: true },
+      });
+      if (room?.isDirectMessage) {
+        return failAction(null, false, 'Direct message members are locked');
+      }
+
       const actor = await this.findActiveMember(
         actorUserId,
         recoveredMember.data.roomId,
@@ -284,6 +452,14 @@ export class RoomMembersService {
           where: { id: id },
         });
         if (memberUpdated) {
+          await this.notificationsService.create({
+            recipientId: recoveredMember.data.userId,
+            workspaceId: room?.workspaceId,
+            type: NotificationType.ROOM_MEMBER_REMOVED,
+            title: 'Retrait d’une room',
+            body: 'Vous avez été retiré d’une room.',
+            metadata: { roomId: recoveredMember.data.roomId },
+          });
           return successAction(memberUpdated, true);
         } else {
           return failAction(null, false, 'Member:not found !');

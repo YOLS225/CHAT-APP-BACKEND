@@ -10,6 +10,8 @@ import { RoomMembersModule } from './business-logic/room-members/room-members.mo
 import { AuthModule } from './business-logic/auth/auth.module';
 import { StatisticsModule } from './business-logic/statistics/statistics.module';
 import { WorkspacesModule } from './business-logic/workspaces/workspaces.module';
+import { AttachmentsModule } from './business-logic/attachments/attachments.module';
+import { NotificationsModule } from './business-logic/notifications/notifications.module';
 import { ConfigModule } from '@nestjs/config';
 
 @Module({
@@ -22,6 +24,8 @@ import { ConfigModule } from '@nestjs/config';
     AuthModule,
     StatisticsModule,
     WorkspacesModule,
+    NotificationsModule,
+    AttachmentsModule,
     ConfigModule.forRoot({ isGlobal: true }),
   ],
   controllers: [AppController],

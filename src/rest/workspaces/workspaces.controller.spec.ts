@@ -3,6 +3,7 @@ import { MailService } from '../../business-logic/mail/mail.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WorkspacesService } from '../../business-logic/workspaces/workspaces.service';
 import { WorkspacesController } from './workspaces.controller';
+import { NotificationsService } from '../../business-logic/notifications/notifications.service';
 
 describe('WorkspacesController', () => {
   let controller: WorkspacesController;
@@ -10,7 +11,12 @@ describe('WorkspacesController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [WorkspacesController],
-      providers: [WorkspacesService, PrismaService, MailService],
+      providers: [
+        WorkspacesService,
+        PrismaService,
+        MailService,
+        NotificationsService,
+      ],
     }).compile();
 
     controller = module.get<WorkspacesController>(WorkspacesController);

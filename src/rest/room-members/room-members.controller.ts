@@ -14,6 +14,7 @@ import type { Request } from 'express';
 import { RoomMembersService } from '../../business-logic/room-members/room-members.service';
 import { CreateRoomMemberDto } from '../../business-logic/room-members/dto/create-room-member.dto';
 import { UpdateMemberRoleDto } from '../../business-logic/room-members/dto/update-room-member.dto';
+import { AddRoomMemberDto } from '../../business-logic/room-members/dto/add-room-member.dto';
 import { JwtAuthGuard } from '../../guard/jwt.guard';
 import { ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { normalizePagination } from '../../utils/pagination';
@@ -32,6 +33,19 @@ export class RoomMembersController {
   ) {
     const userId = (request.user as { sub: string }).sub;
     return this.roomMembersService.joinRoom(createRoomMemberDto, userId);
+  }
+
+  @Post(':roomId/members')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Add a member to a room (OWNER/ADMIN only)' })
+  addMember(
+    @Param('roomId') roomId: string,
+    @Body() dto: AddRoomMemberDto,
+    @Req() request: Request,
+  ) {
+    const actorUserId = (request.user as { sub: string }).sub;
+    return this.roomMembersService.addMember(roomId, actorUserId, dto);
   }
 
   @Get()

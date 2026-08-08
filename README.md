@@ -173,6 +173,7 @@ Créer un fichier `.env` à la racine :
 
 ```env
 DATABASE_URL="postgresql://postgres:postgres@localhost:5469/postgres?schema=public"
+REDIS_URL="redis://localhost:6379"
 PORT=9000
 
 JWT_SECRET="your-secret-key"
@@ -187,6 +188,12 @@ SMTP_SECURE=false
 SMTP_USER="your-brevo-login"
 SMTP_PASS="your-brevo-password"
 MAIL_FROM="Chat App <noreply@example.com>"
+
+R2_ENDPOINT="https://<account-id>.r2.cloudflarestorage.com"
+R2_ACCESS_KEY_ID="your-r2-access-key"
+R2_SECRET_ACCESS_KEY="your-r2-secret-key"
+R2_BUCKET="chat-attachments"
+R2_PUBLIC_BASE_URL="https://cdn.example.com"
 ```
 
 ### Configuration email
@@ -226,14 +233,39 @@ Pendant un import Excel, l'API retourne un statut par utilisateur:
 - `emailSkipped: true` : mode console, pas d'envoi reel.
 - `emailError` : l'utilisateur et l'invitation sont crees, mais l'email a echoue.
 
+### Configuration Redis / BullMQ
+
+Redis est utilise par BullMQ pour traiter les imports Excel en background.
+
+```env
+REDIS_URL="redis://localhost:6379"
+```
+
+Sur Render, utiliser l'URL Redis fournie par le service managé.
+
+### Configuration Cloudflare R2
+
+Les fichiers et notes vocales sont uploades directement par le front vers R2 via URL signee.
+
+```env
+R2_ENDPOINT="https://<account-id>.r2.cloudflarestorage.com"
+R2_ACCESS_KEY_ID="your-r2-access-key"
+R2_SECRET_ACCESS_KEY="your-r2-secret-key"
+R2_BUCKET="chat-attachments"
+R2_PUBLIC_BASE_URL="https://cdn.example.com"
+```
+
+`R2_PUBLIC_BASE_URL` est optionnel. S'il est absent, le backend stocke seulement la `key`.
+
 ## Services Docker
 
-Le fichier `compose.yaml` démarre deux services :
+Le fichier `compose.yaml` démarre trois services :
 
 | Service    | Description                          | Port(s)                        |
 |------------|--------------------------------------|--------------------------------|
 | `app`      | API NestJS                           | `9000`                         |
 | `postgres` | Base de données PostgreSQL 16.2      | `5469` → `5432`                |
+| `redis`    | Queue BullMQ pour imports Excel      | `6379`                         |
 
 ### Commandes Make
 
@@ -293,7 +325,9 @@ npm run format
 | GET | `/workspaces/:workspaceId/users?search` | Lister les utilisateurs du workspace |
 | PATCH | `/workspaces/:workspaceId/users/:userId` | Modifier rôle/statut d'un membre |
 | DELETE | `/workspaces/:workspaceId/users/:userId` | Désactiver un membre du workspace |
-| POST | `/workspaces/:workspaceId/users/import/excel?dryRun=true` | Importer des utilisateurs depuis Excel/CSV multipart |
+| POST | `/workspaces/:workspaceId/users/import/excel?dryRun=true` | Créer un job d'import utilisateurs depuis Excel/CSV multipart |
+| GET | `/workspaces/:workspaceId/import-jobs` | Lister les jobs d'import récents |
+| GET | `/workspaces/:workspaceId/import-jobs/:jobId` | Suivre un job d'import |
 | POST | `/workspaces/:workspaceId/dms` | Créer ou récupérer une conversation directe |
 
 ### Users
@@ -321,16 +355,30 @@ npm run format
 ### Messages
 | Méthode | Route | Description |
 |---|---|---|
-| POST | `/messages` | Envoyer un message |
+| POST | `/messages` | Envoyer un message texte/fichier/audio avec `attachmentIds` |
 | GET | `/messages/:id` | Récupérer un message |
 | GET | `/messages/room/:id?search` | Messages d'une room |
 | PATCH | `/messages/:id` | Modifier un message |
 | DELETE | `/messages/:id` | Supprimer un message |
 
+### Attachments
+| Méthode | Route | Description |
+|---|---|---|
+| POST | `/attachments/upload-url` | Générer une URL signée R2 pour upload direct |
+
+### Notifications
+| Méthode | Route | Description |
+|---|---|---|
+| GET | `/notifications?workspaceId&unreadOnly` | Lister les notifications |
+| GET | `/notifications/unread-count?workspaceId` | Compter les notifications non lues |
+| PATCH | `/notifications/:id/read` | Marquer une notification comme lue |
+| PATCH | `/notifications/read-all?workspaceId` | Marquer toutes les notifications comme lues |
+
 ### Room Members
 | Méthode | Route | Description |
 |---|---|---|
-| POST | `/room-members` | Rejoindre une room (avec `role` optionnel) |
+| POST | `/room-members` | Rejoindre une room publique |
+| POST | `/room-members/:roomId/members` | Ajouter un membre à une room (OWNER/ADMIN) |
 | GET | `/room-members?page&page_size` | Lister les membres |
 | GET | `/room-members/:id` | Récupérer un membre |
 | PATCH | `/room-members/:memberId/role` | Modifier le rôle d'un membre |

@@ -54,7 +54,7 @@ export class UsersService {
           email: createUserDto.email,
           password: hashedPassword,
           avatar: createUserDto.avatar,
-          isOnline: createUserDto.isOnline || false,
+          isOnline: false,
           platformRole,
         },
         select: {

@@ -1,12 +1,17 @@
 import { Injectable } from '@nestjs/common';
+import { AttachmentStatus, NotificationType } from '../../../generated/prisma';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { UpdateMessageDto } from './dto/update-message.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { failAction, successAction } from '../../utils/action.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class MessagesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   private async isActiveRoomMember(roomId: string, userId: string) {
     const member = await this.prisma.roomMember.findUnique({
@@ -24,23 +29,133 @@ export class MessagesService {
 
   async create(createMessageDto: CreateMessageDto, senderId: string) {
     try {
-      const isMember = await this.isActiveRoomMember(
-        createMessageDto.roomId,
-        senderId,
-      );
+      const [isMember, room] = await Promise.all([
+        this.isActiveRoomMember(createMessageDto.roomId, senderId),
+        this.prisma.room.findUnique({
+          where: { id: createMessageDto.roomId },
+          select: {
+            id: true,
+            name: true,
+            workspaceId: true,
+            isDirectMessage: true,
+            members: {
+              where: { isActive: true },
+              select: {
+                userId: true,
+                user: { select: { userName: true } },
+              },
+            },
+          },
+        }),
+      ]);
       if (!isMember) {
         return failAction(null, false, 'User is not a member of this room');
       }
 
-      const message = await this.prisma.message.create({
-        data: {
-          content: createMessageDto.content,
-          roomId: createMessageDto.roomId,
-          senderId,
-          type: createMessageDto.type || 'TEXT',
-        },
+      if (!room) {
+        return failAction(null, false, 'Room not found');
+      }
+
+      const attachmentIds = createMessageDto.attachmentIds || [];
+      if (!createMessageDto.content?.trim() && attachmentIds.length === 0) {
+        return failAction(
+          null,
+          false,
+          'Message content or attachment required',
+        );
+      }
+
+      if (attachmentIds.length > 0) {
+        const attachments = await this.prisma.attachment.findMany({
+          where: {
+            id: { in: attachmentIds },
+            uploadedById: senderId,
+            status: AttachmentStatus.PENDING,
+          },
+          select: { id: true },
+        });
+
+        if (attachments.length !== attachmentIds.length) {
+          return failAction(
+            null,
+            false,
+            'Some attachments are invalid or already attached',
+          );
+        }
+      }
+
+      const message = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.message.create({
+          data: {
+            content: createMessageDto.content || '',
+            roomId: createMessageDto.roomId,
+            senderId,
+            type: createMessageDto.type || 'TEXT',
+          },
+          include: {
+            attachments: true,
+            sender: {
+              select: {
+                id: true,
+                userName: true,
+                avatar: true,
+              },
+            },
+          },
+        });
+
+        if (attachmentIds.length > 0) {
+          await tx.attachment.updateMany({
+            where: { id: { in: attachmentIds }, uploadedById: senderId },
+            data: {
+              messageId: created.id,
+              status: AttachmentStatus.ATTACHED,
+            },
+          });
+
+          return tx.message.findUnique({
+            where: { id: created.id },
+            include: {
+              attachments: true,
+              sender: {
+                select: {
+                  id: true,
+                  userName: true,
+                  avatar: true,
+                },
+              },
+            },
+          });
+        }
+
+        return created;
       });
+
       if (message) {
+        if (room.isDirectMessage) {
+          const sender = room.members.find(
+            (member) => member.userId === senderId,
+          );
+          await Promise.all(
+            room.members
+              .filter((member) => member.userId !== senderId)
+              .map((member) =>
+                this.notificationsService.create({
+                  recipientId: member.userId,
+                  workspaceId: room.workspaceId,
+                  type: NotificationType.DM_MESSAGE,
+                  title: sender?.user.userName || 'Nouveau message',
+                  body: createMessageDto.content || 'Nouveau message',
+                  metadata: {
+                    roomId: room.id,
+                    messageId: message.id,
+                    senderId,
+                  },
+                }),
+              ),
+          );
+        }
+
         return successAction(message, true, 'Message:Created successfuly !');
       } else {
         return failAction(null, false, 'Error during message creation !');
@@ -81,10 +196,12 @@ export class MessagesService {
           updatedAt: true,
           sender: {
             select: {
+              id: true,
               userName: true,
               avatar: true,
             },
           },
+          attachments: true,
         },
         orderBy: { createdAt: 'asc' as const },
       });
@@ -111,10 +228,12 @@ export class MessagesService {
           updatedAt: true,
           sender: {
             select: {
+              id: true,
               userName: true,
               avatar: true,
             },
           },
+          attachments: true,
         },
       });
 

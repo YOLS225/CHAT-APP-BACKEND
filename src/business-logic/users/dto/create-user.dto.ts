@@ -1,17 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { UserStatus } from '../../../utils/types';
-import {
-  IsBoolean,
-  IsEmail,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-} from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateUserDto {
-  @IsOptional()
-  @IsString()
-  id?: string;
   @ApiProperty({ example: 'string' })
   @IsString()
   @IsNotEmpty()
@@ -27,18 +18,6 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   avatar?: string;
-  @ApiProperty({ example: true })
-  @IsOptional()
-  @IsBoolean()
-  isOnline?: boolean;
-  @IsOptional()
-  createdAt?: Date;
-  // @ApiProperty({ type: () => [Message] })
-  // sentMessages: Message[];
-  // @ApiProperty({ type: () => [RoomMember] })
-  // roomMemberships: RoomMember[];
-  // @ApiProperty({ enum: UserStatus, example: UserStatus.ACTIVE })
-  // status?: UserStatus;
 }
 
 export class UserResponseDto {

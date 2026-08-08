@@ -199,97 +199,29 @@ export class RoomsService {
 
       const skip = (page - 1) * page_size;
 
-      const memberships = await this.prisma.roomMember.findMany({
+      const rooms = await this.prisma.room.findMany({
         skip,
         take: page_size,
         where: {
-          userId,
+          workspaceId,
           isActive: true,
-          room: {
-            workspaceId,
-            isActive: true,
-            ...(isDirectMessage !== undefined && {
-              isDirectMessage,
-            }),
-          },
-        },
-        select: {
-          room: {
-            select: {
-              id: true,
-              name: true,
-              description: true,
-              isPrivate: true,
-              isDirectMessage: true,
-              createdAt: true,
+          ...(isDirectMessage !== undefined && {
+            isDirectMessage,
+          }),
+          OR: [
+            {
+              isPrivate: false,
+              isDirectMessage: false,
+            },
+            {
               members: {
-                where: { isActive: true },
-                select: {
-                  userId: true,
-                  user: {
-                    select: {
-                      id: true,
-                      userName: true,
-                      avatar: true,
-                      isOnline: true,
-                    },
-                  },
+                some: {
+                  userId,
+                  isActive: true,
                 },
-              },
-              messages: {
-                where: { isDeleted: false },
-                select: {
-                  content: true,
-                  senderId: true,
-                  sender: {
-                    select: {
-                      userName: true,
-                    },
-                  },
-                },
-                orderBy: {
-                  createdAt: 'desc' as const,
-                },
-                take: 1,
               },
             },
-          },
-        },
-        orderBy: { joinedAt: 'asc' as const },
-      });
-
-      let content = memberships.map((membership) =>
-        this.formatRoomForUser(membership.room, userId),
-      );
-
-      if (search?.trim()) {
-        const searchLower = search.toLowerCase();
-        content = content.filter((room) =>
-          room.isDirectMessage
-            ? room.displayName.toLowerCase().includes(searchLower)
-            : room.name.toLowerCase().includes(searchLower),
-        );
-      }
-
-      return successAction(content, true, 'Room: find successfully!');
-    } catch (e) {
-      console.error(e);
-      return failAction(null, false, `Error during action: ${e}`);
-    }
-  }
-
-  async findById(id: string, userId?: string) {
-    try {
-      if (userId) {
-        const member = await this.findActiveMember(id, userId);
-        if (!member?.isActive) {
-          return failAction(null, false, 'User is not a member of this room');
-        }
-      }
-
-      const recoveredRoom = await this.prisma.room.findFirst({
-        where: {
-          id: id,
+          ],
         },
         select: {
           id: true,
@@ -312,12 +244,101 @@ export class RoomsService {
               },
             },
           },
+          messages: {
+            where: { isDeleted: false },
+            select: {
+              content: true,
+              senderId: true,
+              sender: {
+                select: {
+                  userName: true,
+                },
+              },
+            },
+            orderBy: {
+              createdAt: 'desc' as const,
+            },
+            take: 1,
+          },
+        },
+        orderBy: { createdAt: 'asc' as const },
+      });
+
+      let content = rooms.map((room) => this.formatRoomForUser(room, userId));
+
+      if (search?.trim()) {
+        const searchLower = search.toLowerCase();
+        content = content.filter((room) =>
+          room.isDirectMessage
+            ? room.displayName.toLowerCase().includes(searchLower)
+            : room.name.toLowerCase().includes(searchLower),
+        );
+      }
+
+      return successAction(content, true, 'Room: find successfully!');
+    } catch (e) {
+      console.error(e);
+      return failAction(null, false, `Error during action: ${e}`);
+    }
+  }
+
+  async findById(id: string, userId?: string) {
+    try {
+      const recoveredRoom = await this.prisma.room.findFirst({
+        where: {
+          id: id,
+          isActive: true,
+        },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          isPrivate: true,
+          isDirectMessage: true,
+          workspaceId: true,
+          createdAt: true,
+          members: {
+            where: { isActive: true },
+            select: {
+              userId: true,
+              user: {
+                select: {
+                  id: true,
+                  userName: true,
+                  avatar: true,
+                  isOnline: true,
+                },
+              },
+            },
+          },
         },
       });
 
       if (!recoveredRoom) {
         return failAction(null, false, 'Room:not found !');
       }
+
+      if (userId) {
+        const workspaceMember = await this.findActiveWorkspaceMember(
+          recoveredRoom.workspaceId,
+          userId,
+        );
+        if (!workspaceMember || workspaceMember.status !== 'ACTIVE') {
+          return failAction(
+            null,
+            false,
+            'User is not a member of this workspace',
+          );
+        }
+
+        if (recoveredRoom.isPrivate || recoveredRoom.isDirectMessage) {
+          const member = await this.findActiveMember(id, userId);
+          if (!member?.isActive) {
+            return failAction(null, false, 'User is not a member of this room');
+          }
+        }
+      }
+
       return successAction(
         userId ? this.formatRoomForUser(recoveredRoom, userId) : recoveredRoom,
         true,
@@ -331,9 +352,36 @@ export class RoomsService {
 
   async getRoomMembers(roomId: string, userId: string) {
     try {
-      const member = await this.findActiveMember(roomId, userId);
-      if (!member?.isActive) {
-        return failAction(null, false, 'User is not a member of this room');
+      const room = await this.prisma.room.findUnique({
+        where: { id: roomId },
+        select: {
+          workspaceId: true,
+          isPrivate: true,
+          isDirectMessage: true,
+          isActive: true,
+        },
+      });
+      if (!room || !room.isActive) {
+        return failAction(null, false, 'Room:not found !');
+      }
+
+      const workspaceMember = await this.findActiveWorkspaceMember(
+        room.workspaceId,
+        userId,
+      );
+      if (!workspaceMember || workspaceMember.status !== 'ACTIVE') {
+        return failAction(
+          null,
+          false,
+          'User is not a member of this workspace',
+        );
+      }
+
+      if (room.isPrivate || room.isDirectMessage) {
+        const member = await this.findActiveMember(roomId, userId);
+        if (!member?.isActive) {
+          return failAction(null, false, 'User is not a member of this room');
+        }
       }
 
       const roomMembers = await this.prisma.roomMember.findMany({
@@ -371,111 +419,14 @@ export class RoomsService {
     isDirectMessage?: boolean,
     search?: string,
   ) {
-    try {
-      if (!workspaceId) {
-        return failAction(null, false, 'workspaceId is required');
-      }
-
-      const workspaceMember = await this.findActiveWorkspaceMember(
-        workspaceId,
-        userId,
-      );
-      if (!workspaceMember || workspaceMember.status !== 'ACTIVE') {
-        return failAction(
-          null,
-          false,
-          'User is not a member of this workspace',
-        );
-      }
-
-      const rooms = await this.prisma.roomMember.findMany({
-        where: {
-          userId: userId,
-          isActive: true,
-          room: {
-            workspaceId,
-            isActive: true,
-          },
-          ...(isDirectMessage !== undefined && {
-            room: {
-              workspaceId,
-              isDirectMessage: isDirectMessage,
-            },
-          }),
-        },
-        select: {
-          room: {
-            select: {
-              id: true,
-              name: true,
-              description: true,
-              isDirectMessage: true,
-              members: {
-                where: { isActive: true },
-                select: {
-                  userId: true,
-                  user: {
-                    select: {
-                      id: true,
-                      userName: true,
-                      avatar: true,
-                      isOnline: true,
-                    },
-                  },
-                },
-              },
-              messages: {
-                select: {
-                  content: true,
-                  senderId: true,
-                  sender: {
-                    select: {
-                      userName: true,
-                    },
-                  },
-                },
-                orderBy: {
-                  createdAt: 'desc' as const,
-                },
-                take: 1,
-              },
-            },
-          },
-        },
-      });
-
-      // Pour les DMs, remplacer le nom de la room par le nom de l'autre utilisateur
-      let roomsWithDisplayName = rooms.map((roomMember) =>
-        this.formatRoomForUser(roomMember.room, userId),
-      );
-
-      // Appliquer le filtre de recherche
-      if (search?.trim()) {
-        const searchLower = search.toLowerCase();
-        roomsWithDisplayName = roomsWithDisplayName.filter((room) => {
-          if (room.isDirectMessage) {
-            // Pour les DMs, rechercher sur displayName
-            return room.displayName.toLowerCase().includes(searchLower);
-          } else {
-            // Pour les rooms normales, rechercher sur name
-            return room.name.toLowerCase().includes(searchLower);
-          }
-        });
-      }
-
-      if (roomsWithDisplayName) {
-        return successAction(
-          roomsWithDisplayName,
-          true,
-          'Room:find successfully!',
-        );
-      } else {
-        return failAction(null, false, 'Room:not found !');
-      }
-    } catch (e) {
-      console.error(e);
-      return failAction(null, false, `Error during action: ${e}`);
-    }
+    return this.findAll(
+      1,
+      100000,
+      userId,
+      workspaceId,
+      search,
+      isDirectMessage,
+    );
   }
 
   async update(id: string, userId: string, updateRoomDto: UpdateRoomDto) {
