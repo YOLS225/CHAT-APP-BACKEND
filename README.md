@@ -181,19 +181,19 @@ JWT_EXPIRES_IN="25min"
 JWT_REFRESH_SECRET="your-refresh-secret-key"
 JWT_REFRESH_EXPIRES_IN="7d"
 
-MAIL_DRIVER=console
-SMTP_HOST=smtp-relay.brevo.com
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER="your-brevo-login"
-SMTP_PASS="your-brevo-password"
+MAIL_DRIVER=sendpulse
+SENDPULSE_API_KEY=""
+SENDPULSE_CLIENT_ID="your-sendpulse-client-id"
+SENDPULSE_CLIENT_SECRET="your-sendpulse-client-secret"
+SENDPULSE_FROM="Chat App <noreply@example.com>"
 MAIL_FROM="Chat App <noreply@example.com>"
 
-R2_ENDPOINT="https://<account-id>.r2.cloudflarestorage.com"
-R2_ACCESS_KEY_ID="your-r2-access-key"
-R2_SECRET_ACCESS_KEY="your-r2-secret-key"
-R2_BUCKET="chat-attachments"
-R2_PUBLIC_BASE_URL="https://cdn.example.com"
+S3_ENDPOINT="http://minio:9000"
+S3_REGION="us-east-1"
+S3_ACCESS_KEY="minioadmin"
+S3_SECRET_KEY="minioadmin"
+S3_BUCKET="datakontrol"
+S3_PUBLIC_BASE_URL=""
 ```
 
 ### Configuration email
@@ -208,18 +208,18 @@ MAIL_DRIVER=console
 
 Dans ce mode, aucun email reel n'est envoye. Le backend log les liens d'invitation et les retourne aussi dans la reponse d'import.
 
-En production avec Brevo SMTP:
+En production avec SendPulse:
 
 ```env
-MAIL_DRIVER=smtp
-SMTP_HOST=smtp-relay.brevo.com
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER="your-brevo-login"
-SMTP_PASS="your-brevo-password"
-MAIL_FROM="Chat App <noreply@your-domain.com>"
+MAIL_DRIVER=sendpulse
+SENDPULSE_API_KEY=""
+SENDPULSE_CLIENT_ID="your-sendpulse-client-id"
+SENDPULSE_CLIENT_SECRET="your-sendpulse-client-secret"
+SENDPULSE_FROM="Chat App <noreply@your-domain.com>"
 FRONTEND_URL="https://your-frontend-domain.com"
 ```
+
+`SENDPULSE_API_KEY` est optionnel. S'il est absent, le backend utilise `SENDPULSE_CLIENT_ID` + `SENDPULSE_CLIENT_SECRET` pour obtenir un token OAuth.
 
 `FRONTEND_URL` sert a construire les liens:
 
@@ -243,29 +243,31 @@ REDIS_URL="redis://localhost:6379"
 
 Sur Render, utiliser l'URL Redis fournie par le service managé.
 
-### Configuration Cloudflare R2
+### Configuration S3 / MinIO
 
-Les fichiers et notes vocales sont uploades directement par le front vers R2 via URL signee.
+Les fichiers et notes vocales sont uploades directement par le front vers un stockage compatible S3 via URL signee.
 
 ```env
-R2_ENDPOINT="https://<account-id>.r2.cloudflarestorage.com"
-R2_ACCESS_KEY_ID="your-r2-access-key"
-R2_SECRET_ACCESS_KEY="your-r2-secret-key"
-R2_BUCKET="chat-attachments"
-R2_PUBLIC_BASE_URL="https://cdn.example.com"
+S3_ENDPOINT="http://minio:9000"
+S3_REGION="us-east-1"
+S3_ACCESS_KEY="minioadmin"
+S3_SECRET_KEY="minioadmin"
+S3_BUCKET="datakontrol"
+S3_PUBLIC_BASE_URL=""
 ```
 
-`R2_PUBLIC_BASE_URL` est optionnel. S'il est absent, le backend stocke seulement la `key`.
+`S3_PUBLIC_BASE_URL` est optionnel. S'il est absent, le backend stocke seulement la `key`.
 
 ## Services Docker
 
-Le fichier `compose.yaml` démarre trois services :
+Le fichier `compose.yaml` démarre quatre services :
 
 | Service    | Description                          | Port(s)                        |
 |------------|--------------------------------------|--------------------------------|
 | `app`      | API NestJS                           | `9000`                         |
 | `postgres` | Base de données PostgreSQL 16.2      | `5469` → `5432`                |
 | `redis`    | Queue BullMQ pour imports Excel      | `6379`                         |
+| `minio`    | Stockage S3 local                    | `9002` → `9000`, console `9001` |
 
 ### Commandes Make
 
@@ -364,7 +366,7 @@ npm run format
 ### Attachments
 | Méthode | Route | Description |
 |---|---|---|
-| POST | `/attachments/upload-url` | Générer une URL signée R2 pour upload direct |
+| POST | `/attachments/upload-url` | Générer une URL signée S3 pour upload direct |
 
 ### Notifications
 | Méthode | Route | Description |

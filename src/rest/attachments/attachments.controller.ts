@@ -12,7 +12,7 @@ export class AttachmentsController {
   constructor(private readonly attachmentsService: AttachmentsService) {}
 
   @Post('upload-url')
-  @ApiOperation({ summary: 'Create a signed upload URL for R2' })
+  @ApiOperation({ summary: 'Create a signed upload URL for S3' })
   createUploadUrl(@Body() dto: CreateUploadUrlDto, @Req() request: Request) {
     const userId = (request.user as { sub: string }).sub;
     return this.attachmentsService.createUploadUrl(dto, userId);

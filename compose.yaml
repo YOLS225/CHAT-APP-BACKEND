@@ -11,10 +11,13 @@ services:
     environment:
       DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/postgres?schema=public"
       REDIS_URL: "redis://redis:6379"
+      S3_ENDPOINT: "http://minio:9000"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_started
+      minio:
         condition: service_started
     restart: unless-stopped
 
@@ -23,6 +26,30 @@ services:
     ports:
       - '6379:6379'
     restart: unless-stopped
+
+  minio:
+    image: 'minio/minio:latest'
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - '9002:9000'
+      - '9001:9001'
+    volumes:
+      - chat-backend_minio_data:/data
+    restart: unless-stopped
+
+  minio-init:
+    image: 'minio/mc:latest'
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 minioadmin minioadmin; do sleep 2; done;
+      mc mb -p local/datakontrol || true;
+      "
 
   postgres:
     image: 'postgres:16.2'
@@ -45,3 +72,4 @@ services:
 
 volumes:
   chat-backend_postgres_data:
+  chat-backend_minio_data:

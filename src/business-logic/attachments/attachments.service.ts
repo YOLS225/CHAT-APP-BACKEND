@@ -13,30 +13,33 @@ export class AttachmentsService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  private getR2Config() {
-    const endpoint = process.env.R2_ENDPOINT;
-    const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-    const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
-    const bucket = process.env.R2_BUCKET;
+  private getS3Config() {
+    const endpoint = process.env.S3_ENDPOINT;
+    const region = process.env.S3_REGION || 'us-east-1';
+    const accessKeyId = process.env.S3_ACCESS_KEY;
+    const secretAccessKey = process.env.S3_SECRET_KEY;
+    const bucket = process.env.S3_BUCKET;
 
     if (!endpoint || !accessKeyId || !secretAccessKey || !bucket) {
-      throw new Error('R2 configuration is incomplete');
+      throw new Error('S3 configuration is incomplete');
     }
 
     return {
       endpoint,
+      region,
       accessKeyId,
       secretAccessKey,
       bucket,
-      publicBaseUrl: process.env.R2_PUBLIC_BASE_URL,
+      publicBaseUrl: process.env.S3_PUBLIC_BASE_URL,
     };
   }
 
   private getClient() {
-    const config = this.getR2Config();
+    const config = this.getS3Config();
     return new S3Client({
-      region: 'auto',
+      region: config.region,
       endpoint: config.endpoint,
+      forcePathStyle: true,
       credentials: {
         accessKeyId: config.accessKeyId,
         secretAccessKey: config.secretAccessKey,
@@ -87,7 +90,7 @@ export class AttachmentsService {
         return failAction(null, false, validationError);
       }
 
-      const config = this.getR2Config();
+      const config = this.getS3Config();
       const kind = this.inferKind(dto.mimeType);
       const key = `attachments/${userId}/${randomUUID()}-${dto.fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
       const publicUrl = config.publicBaseUrl
