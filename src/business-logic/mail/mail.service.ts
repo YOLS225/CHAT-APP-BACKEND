@@ -63,55 +63,57 @@ export class MailService {
   }
 
   private async getSendPulseAccessToken() {
-    const apiKey = process.env.SENDPULSE_API_KEY;
-    if (apiKey) return apiKey;
+    const clientId = process.env.SENDPULSE_CLIENT_ID;
+    const clientSecret = process.env.SENDPULSE_CLIENT_SECRET;
+    if (clientId && clientSecret) {
+      if (
+        this.sendPulseToken &&
+        this.sendPulseToken.expiresAt > Date.now() + 60_000
+      ) {
+        return this.sendPulseToken.accessToken;
+      }
 
-    if (
-      this.sendPulseToken &&
-      this.sendPulseToken.expiresAt > Date.now() + 60_000
-    ) {
+      const response = await fetch(
+        'https://api.sendpulse.com/oauth/access_token',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            grant_type: 'client_credentials',
+            client_id: clientId,
+            client_secret: clientSecret,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`SendPulse auth failed: ${response.status} ${body}`);
+      }
+
+      const data = (await response.json()) as {
+        access_token?: string;
+        expires_in?: number;
+      };
+
+      if (!data.access_token) {
+        throw new Error(
+          'SendPulse auth response does not include access_token',
+        );
+      }
+
+      this.sendPulseToken = {
+        accessToken: data.access_token,
+        expiresAt: Date.now() + (data.expires_in || 3600) * 1000,
+      };
+
       return this.sendPulseToken.accessToken;
     }
 
-    const clientId = process.env.SENDPULSE_CLIENT_ID;
-    const clientSecret = process.env.SENDPULSE_CLIENT_SECRET;
-    if (!clientId || !clientSecret) {
-      throw new Error('SendPulse configuration is incomplete');
-    }
+    const apiKey = process.env.SENDPULSE_API_KEY;
+    if (apiKey) return apiKey;
 
-    const response = await fetch(
-      'https://api.sendpulse.com/oauth/access_token',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          grant_type: 'client_credentials',
-          client_id: clientId,
-          client_secret: clientSecret,
-        }),
-      },
-    );
-
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`SendPulse auth failed: ${response.status} ${body}`);
-    }
-
-    const data = (await response.json()) as {
-      access_token?: string;
-      expires_in?: number;
-    };
-
-    if (!data.access_token) {
-      throw new Error('SendPulse auth response does not include access_token');
-    }
-
-    this.sendPulseToken = {
-      accessToken: data.access_token,
-      expiresAt: Date.now() + (data.expires_in || 3600) * 1000,
-    };
-
-    return this.sendPulseToken.accessToken;
+    throw new Error('SendPulse configuration is incomplete');
   }
 
   private async sendWithSendPulse(params: {
